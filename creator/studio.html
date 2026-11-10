@@ -341,7 +341,15 @@ input[type="password"]::-ms-clear {
   try {
     const all = await API.listCompanies('');
     const companies = all.filter(c => c.access === 'open' || c.access === 'granted');
-    if (UI.q('draft')) { sub = await API.getSubmission(UI.q('draft')); if (!EDITABLE.includes(sub.status)) { location.replace('report.html?id=' + sub.id); return; } }
+    if (UI.q('draft')) {
+      try {
+        sub = await API.getSubmission(UI.q('draft'));
+        if (!EDITABLE.includes(sub.status)) { location.replace('report.html?id=' + sub.id); return; }
+      } catch (err) {
+        sub = null;
+        history.replaceState(null, '', 'studio.html');
+      }
+    }
     if (!companies.length && !sub) {
       el.innerHTML = `<div class="page-head"><div><h1>Content Studio</h1></div></div><section class="card">${UI.empty('building', 'No company to write for yet', all.length ? 'Request access to a company, or wait for approval, then come back.' : 'Companies appear once they register and complete their brand setup.', '<a class="btn btn-primary" href="companies.html">Find companies</a>')}</section>`; return;
     }

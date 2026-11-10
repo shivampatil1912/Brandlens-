@@ -412,6 +412,6 @@ input[type="password"]::-ms-clear {
   });
 
   try { sub = await API.getSubmission(id); render(); }
-  catch (e) { el.innerHTML = UI.empty('alert', 'Could not open this content', e.message, '<a class="btn" href="requests.html">Back to review requests</a>'); }
+  catch (e) { el.innerHTML = UI.empty('alert', 'Could not open this content', 'This submission either does not exist or belongs to another company workspace (BrandLens protects company data isolation).', '<a class="btn" href="requests.html">Back to review requests</a>'); }
 })();
 </script></body></html>

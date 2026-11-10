@@ -388,10 +388,18 @@ input[type="password"]::-ms-clear {
 
   function panelAccess() {
     const list = co.accessList || [], pend = list.filter(x => x.status === 'pending'), ok = list.filter(x => x.status === 'approved');
+    const st = API.setupStatus(co);
     const row = (x, btns) => `<li class="item"><div class="avatar" style="width:32px;height:32px;font-size:12px">${esc(UI.initials(x.name))}</div><div class="grow"><b>${esc(x.name)}</b><div class="muted small">${esc(x.email)} · ${UI.fmtDate(x.at)}</div></div>${btns}</li>`;
-    return `<div class="stack" style="max-width:760px"><section class="card card-pad"><h2 style="margin-bottom:12px">Who can write for ${esc(co.name)}</h2>
+    return `<div class="stack" style="max-width:760px">
+      <section class="card card-pad">
+        <h2 style="margin-bottom:12px">Who can write for ${esc(co.name)}</h2>
         <label class="radio-card"><input type="radio" name="acc" value="open" ${(co.access || 'open') === 'open' ? 'checked' : ''}><span><b>Open to all creators</b><br><span class="muted small">Any registered creator can write content for you.</span></span></label>
-        <label class="radio-card"><input type="radio" name="acc" value="approval" ${co.access === 'approval' ? 'checked' : ''}><span><b>Approval required</b><br><span class="muted small">Creators send an access request. Only creators you approve can write for you.</span></span></label></section>
+        <label class="radio-card" style="margin-bottom:14px"><input type="radio" name="acc" value="approval" ${co.access === 'approval' ? 'checked' : ''}><span><b>Approval required</b><br><span class="muted small">Creators send an access request. Only creators you approve can write for you.</span></span></label>
+        <div class="row" style="margin-top:16px;gap:12px">
+          <button class="btn btn-primary" type="button" id="acceptAccessBtn">${UI.icon('check', 16)} Accept & Save Settings</button>
+          ${!co.setupComplete ? `<button class="btn btn-accent" type="button" id="completeFromAccess" ${st.ready ? '' : 'disabled'}>${UI.icon('check-circle', 16)} Open workspace to creators</button>` : `<span class="badge b-ok" style="padding:6px 14px">${UI.icon('check-circle', 16)} Workspace is Open & Live</span>`}
+        </div>
+      </section>
       <section class="card card-pad"><h2 style="margin-bottom:8px">Access requests ${pend.length ? `<span class="badge b-warn">${pend.length}</span>` : ''}</h2>
         ${pend.length ? `<ul class="item-list">${pend.map(x => row(x, `<button class="btn btn-primary btn-sm" data-acc="approve:${x.userId}">Approve</button><button class="btn btn-sm" data-acc="decline:${x.userId}">Decline</button>`)).join('')}</ul>` : '<p class="muted">No pending requests.</p>'}</section>
       <section class="card card-pad"><h2 style="margin-bottom:8px">Approved creators</h2>
@@ -430,7 +438,20 @@ input[type="password"]::-ms-clear {
     const ed = e.target.closest('[data-edit]'); if (ed) { const [type, id] = ed.dataset.edit.split(':'); editing = { type, id }; render(); document.getElementById('addForm').scrollIntoView({ block: 'center' }); return; }
     if (e.target.closest('#cancelEdit')) { editing = null; render(); return; }
     const ac = e.target.closest('[data-acc]'); if (ac) { const [dec, uid] = ac.dataset.acc.split(':'); run(() => API.decideAccess(uid, dec), 'Done.'); return; }
-    if (e.target.closest('#complete')) run(() => API.completeSetup(), 'Your workspace is now open to creators.');
+    if (e.target.closest('#complete') || e.target.closest('#completeFromAccess')) {
+      run(() => API.completeSetup(), 'Your workspace is now open to creators!');
+      return;
+    }
+    if (e.target.closest('#acceptAccessBtn')) {
+      const mode = (document.querySelector('input[name=acc]:checked') || {}).value || 'open';
+      run(async () => {
+        await API.setAccessMode(mode);
+        if (!co.setupComplete && API.setupStatus(co).ready) {
+          await API.completeSetup();
+        }
+      }, 'Access settings saved and workspace updated!');
+      return;
+    }
   });
   el.addEventListener('change', e => {
     if (e.target.id === 'r-type') { ruleType = e.target.value; render(); }

@@ -345,7 +345,7 @@
       const db = load();
       const hasNova = db.companies.some(c => c.name === 'Nova Tech' || c.name === 'NovaTech');
       const hasCreator = db.users.some(u => u.email === 'shivampatil123@gmail.com');
-      const hasSubmissions = (db.submissions || []).length >= 3;
+      const hasSubmissions = (db.submissions || []).some(s => s.id === 's_post_1') && (db.submissions || []).some(s => s.id === 's_post_3');
       if (!force && hasNova && hasCreator && hasSubmissions) return;
       await this._seed(force);
     },
