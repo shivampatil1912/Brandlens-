@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-base="../">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Review Details · BrandLens</title>
+<link rel="icon" href="../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css"></head>
+<body><div id="app"></div>
+<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script>
+(async () => {
+  await API.ready;
+  const ctx = UI.shell({ role: 'company', active: 'requests', title: 'Review Details' }); if (!ctx) return;
+  const el = ctx.content, id = UI.q('id'), esc = UI.esc;
+  let sub, busy = false, tab = 'report', cmpFrom = null, cmpTo = null;
+  el.innerHTML = UI.loading();
+  const ver = n => sub.versions.find(v => v.no === n);
+
+  function reportTab(v, f, c) {
+    return `<section class="card"><div class="card-head"><h2>Submitted content</h2><span class="muted small">Version ${v.no} · highlighted text has a finding</span></div>
+        <div class="card-body"><div class="draft" id="draft">${UI.highlight(v.text, f)}</div></div></section>
+      <section class="card card-pad"><div class="row between" style="margin-bottom:10px"><h2>BrandLens checker report</h2><span class="badge b-muted">Rule-based check</span></div>
+        ${UI.scoreCard(f)}</section>
+      <section><h2 style="margin-bottom:6px">Detected issues</h2>
+        <p class="muted small" style="margin-bottom:12px">Decision support only. It checks the post against your own approved rules and facts; it does not approve or reject, and it cannot confirm legal or factual correctness.${c.dismissed ? ' The creator dismissed ' + c.dismissed + ' finding(s); they are shown faded.' : ''}</p>
+        ${c.total === 0 ? UI.banner('ok', 'No findings', ' The post matches your approved rules and facts.') : UI.groupedFindings(f)}</section>`;
+  }
+  function rulesCard(f) {
+    const rules = []; const seen = new Set();
+    f.forEach(x => { if (!seen.has(x.rule)) { seen.add(x.rule); rules.push(x); } });
+    return `<section class="card card-pad"><h2 style="margin-bottom:10px">Relevant company rules</h2>${rules.length ? `<ul class="item-list">${rules.map(x => `<li class="item"><div class="grow small">${esc(x.rule)}</div>${UI.sevBadge(x.severity)}</li>`).join('')}</ul>` : '<p class="muted small">No rules were triggered by this version.</p>'}</section>`;
+  }
+  function compareTab() {
+    const nums = sub.versions.map(v => v.no), subd = (sub.submittedVersions || []).map(x => x.no);
+    if (cmpTo == null) { cmpTo = nums[nums.length - 1]; const prev = subd.filter(n => n < cmpTo); cmpFrom = prev.length ? prev[prev.length - 1] : nums[Math.max(0, nums.length - 2)]; }
+    const fb = sub.comments.filter(c => c.role === 'company' && c.decision);
+    const sel = (idn, cur) => `<select class="select" id="${idn}" style="width:auto">${nums.map(n => `<option value="${n}" ${n === cur ? 'selected' : ''}>Version ${n}${subd.includes(n) ? ' (submitted)' : ''}</option>`).join('')}</select>`;
+    const a = ver(cmpFrom).text, b = ver(cmpTo).text;
+    return `<section class="card card-pad"><div class="row between" style="margin-bottom:12px"><h2>Original vs revised content</h2>${UI.badge(sub.status)}</div>
+        <div class="row" style="margin-bottom:14px"><label class="muted small" for="cf">Original</label>${sel('cf', cmpFrom)}<span class="arrow">→</span><label class="muted small" for="ct">Revised</label>${sel('ct', cmpTo)}
+          <span class="pill-row"><ins class="d">added</ins><del class="d">removed</del></span></div>
+        ${cmpFrom === cmpTo ? '<p class="muted">Choose two different versions to compare.</p>' : `<div class="diff">${UI.diffHtml(a, b)}</div>`}</section>
+      <section class="card card-pad"><h2 style="margin-bottom:10px">Previous company feedback</h2>${fb.length ? fb.map(c => `<div class="comment company"><b>${esc(c.by)}</b><small>${UI.fmtDate(c.at)} · ${UI.statusLabel(c.decision)}</small><p>${esc(c.text)}</p></div>`).join('') : '<p class="muted small">No feedback has been given yet.</p>'}</section>`;
+  }
+
+  function render() {
+    const v = sub.versions[sub.versions.length - 1], f = v.findings || [], c = BrandCheck.counts(f), pending = sub.status === 'pending_review', cr = sub.creator || {};
+    const notice = { approved: sub.autoApproved ? UI.banner('ok', 'Auto-approved by BrandLens', ' This post had no findings and your settings allow auto-approval. It is ready to publish.') : UI.banner('ok', 'You approved this content', ' It is ready to publish.'),
+      changes_requested: UI.banner('warn', 'Changes requested', ' Waiting for the creator to revise and resubmit.'), rejected: UI.banner('bad', 'You rejected this content', '') }[sub.status] || '';
+    const canCmp = sub.versions.length > 1;
+    if (!canCmp) tab = 'report';
+    el.innerHTML = `
+      <p style="margin-bottom:10px"><a class="btn btn-ghost btn-sm" href="requests.html">← Review requests</a></p>
+      <div class="page-head"><div><h1>#${sub.no} ${esc(sub.title)}</h1><p>${esc(sub.channel)} · version ${v.no} · submitted ${UI.fmtDate(sub.submittedAt)}</p></div>${UI.badge(sub.status)}</div>
+      ${notice}
+      <div class="grid-2">
+        <div class="stack">
+          <div class="tabs" style="margin-bottom:0"><button class="tab ${tab === 'report' ? 'on' : ''}" data-tab="report">Content and report</button>${canCmp ? `<button class="tab ${tab === 'compare' ? 'on' : ''}" data-tab="compare">Compare versions (${sub.versions.length})</button>` : ''}</div>
+          ${tab === 'report' ? reportTab(v, f, c) : compareTab()}
+        </div>
+        <div class="stack">
+          <section class="card card-pad"><h2 style="margin-bottom:10px">Creator</h2><dl class="kv" style="grid-template-columns:90px 1fr"><dt>Name</dt><dd>${esc(cr.name || sub.creatorName)}</dd><dt>Email</dt><dd>${esc(cr.email || sub.creatorEmail)}</dd>${cr.since ? `<dt>Joined</dt><dd>${UI.fmtDate(cr.since)}</dd>` : ''}<dt>Submissions</dt><dd>${cr.posts != null ? cr.posts + ' to your company' : '–'}</dd></dl></section>
+          ${pending ? `<section class="card card-pad"><h2 style="margin-bottom:6px">Your decision</h2><p class="muted small" style="margin-bottom:12px">A comment is required to request changes or reject.</p>
+            <div class="field"><label for="dec">Comment to the creator</label><textarea class="textarea" id="dec" style="min-height:90px" placeholder="What should change, or why is it approved?"></textarea><span class="err" id="decErr"></span></div>
+            <div class="stack"><button class="btn btn-primary btn-block" data-d="approve">${UI.icon('check-circle', 16)}Approve</button>
+            <button class="btn btn-block" data-d="changes">Request changes</button><button class="btn btn-danger btn-block" data-d="reject">Reject</button></div></section>` : ''}
+          ${rulesCard(f)}
+          <section class="card card-pad"><h2 style="margin-bottom:12px">Comments and feedback</h2>${UI.comments(sub.comments)}
+            <div class="field" style="margin:14px 0 0"><textarea class="textarea" id="cm" style="min-height:70px" placeholder="Add a comment"></textarea></div><button class="btn btn-sm" id="cmBtn" style="margin-top:8px">Post comment</button></section>
+          <section class="card card-pad"><h2 style="margin-bottom:12px">Submission history</h2>${UI.timeline(sub.events)}</section>
+        </div>
+      </div>`;
+  }
+
+  async function act(fn, ok) { if (busy) return; busy = true; try { sub = await fn(); if (ok) UI.toast(ok, 'ok'); ctx.refreshBell(); render(); } catch (e) { UI.toast(e.message, 'bad'); } busy = false; }
+
+  el.addEventListener('change', e => { if (e.target.id === 'cf') { cmpFrom = +e.target.value; render(); } if (e.target.id === 'ct') { cmpTo = +e.target.value; render(); } });
+  el.addEventListener('click', async e => {
+    const tb = e.target.closest('[data-tab]'); if (tb) { tab = tb.dataset.tab; return render(); }
+    const mk = e.target.closest('mark.hl'); if (mk) return UI.flash('#fc-' + mk.dataset.fid);
+    const fc = e.target.closest('.finding'); if (fc && !e.target.closest('button')) return UI.flash(`mark[data-fid="${fc.dataset.fid}"]`);
+    if (e.target.closest('#cmBtn')) { const t = document.getElementById('cm').value; return act(() => API.addComment(id, t), 'Comment posted.'); }
+    const b = e.target.closest('[data-d]'); if (!b) return;
+    const d = b.dataset.d, comment = document.getElementById('dec').value.trim(), err = document.getElementById('decErr');
+    if (d !== 'approve' && !comment) { err.textContent = 'Add a comment explaining your decision.'; document.getElementById('dec').classList.add('invalid'); return; }
+    err.textContent = '';
+    const M = { approve: ['Approve this content?', 'It will be marked approved and ready to publish. The creator is notified.', 'Approve', false, 'Content approved.'],
+      changes: ['Request changes?', 'The content goes back to the creator with your comment.', 'Request changes', false, 'Changes requested.'],
+      reject: ['Reject this content?', 'The creator is notified and cannot resubmit it.', 'Reject', true, 'Content rejected.'] }[d];
+    if (await UI.confirmBox({ title: M[0], message: M[1], confirmText: M[2], danger: M[3] })) act(() => API.decide(id, { decision: d, comment }), M[4]);
+  });
+
+  try { sub = await API.getSubmission(id); render(); }
+  catch (e) { el.innerHTML = UI.empty('alert', 'Could not open this content', e.message, '<a class="btn" href="requests.html">Back to review requests</a>'); }
+})();
+</script></body></html>

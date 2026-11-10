@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" data-base="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BrandLens — Create confidently. Stay on-brand.</title>
+<meta name="description" content="BrandLens checks content against a company's approved brand rules and facts, explains the issues, and leaves the final decision to people.">
+<link rel="icon" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="site-header"><div class="in">
+  <a class="brand" href="index.html"><img src="assets/logo-mark.png" alt="">BrandLens</a>
+  <nav class="site-nav" aria-label="Main">
+    <a href="#about">About</a><a href="#features">Features</a><a href="#how">How It Works</a>
+    <a class="btn btn-primary btn-sm" href="auth.html" id="navLogin">Login</a>
+  </nav>
+</div></header>
+
+<main>
+<section class="hero"><div class="wrap">
+  <div>
+    <h1>Create confidently.<br>Stay on-brand.</h1>
+    <p class="lead">One platform where brands and creators collaborate, create content and ensure every post follows brand guidelines.</p>
+    <div class="portals">
+      <div class="portal-card dark">
+        <div id="ic1"></div><h3>For Companies</h3><p>Manage your brand identity, review creator content and maintain brand consistency.</p>
+        <div class="portal-actions">
+          <a class="btn btn-accent btn-sm" href="auth.html?role=company&demo=1">⚡ Demo Account</a>
+          <a class="btn btn-ghost-w btn-sm portal-card-btn" style="background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff" href="auth.html?role=company">Get Started</a>
+        </div>
+      </div>
+      <div class="portal-card">
+        <div id="ic2"></div><h3>For Creators</h3><p>Discover brands, create content, check guidelines and get approvals.</p>
+        <div class="portal-actions">
+          <a class="btn btn-primary btn-sm" href="auth.html?role=creator&demo=1">⚡ Demo Account</a>
+          <a class="btn btn-sm" href="auth.html?role=creator">Get Started</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-art"><img src="assets/logo.png" alt="BrandLens logo: Create, Review, Approve, Stay On-Brand"></div>
+</div></section>
+
+<section class="section" id="how"><div class="wrap">
+  <h2>How It Works</h2>
+  <p class="sub">One shared set of approved company knowledge, two workspaces, and a person who makes the final call.</p>
+  <div class="steps3">
+    <div class="step"><div class="n">1</div><h3>Connect with a Brand</h3><p>Creators find a company, read its brand guidelines and get access to write for it.</p></div>
+    <div class="step"><div class="n">2</div><h3>Create and Check Content</h3><p>Write in Content Studio. BrandLens highlights each issue, the rule behind it and a suggested fix.</p></div>
+    <div class="step"><div class="n">3</div><h3>Review and Approve</h3><p>The company approves, requests changes or rejects, with the full history kept.</p></div>
+  </div>
+</div></section>
+
+<section class="section" id="features" style="padding-top:0"><div class="wrap">
+  <h2>What you get</h2>
+  <p class="sub">Built to be checked, not trusted blindly.</p>
+  <div class="features" id="feat"></div>
+</div></section>
+
+<section class="section about" id="about"><div class="wrap">
+  <h2>About BrandLens</h2>
+  <p>Brand rules usually live in scattered documents and in people’s heads. Posts then go out with outdated facts, unsupported claims or the wrong wording.</p>
+  <p>BrandLens keeps approved knowledge in one place and checks drafts against it before they are published. When it cannot verify something, it says <em>Needs verification</em> instead of guessing. An AI check is never an approval: only the company decides.</p>
+  <p class="small faint">Built by team Shadow Monarchs for We Code 2026 · Code Titan Hackathon.</p>
+</div></section>
+</main>
+
+<footer class="footer"><div class="wrap"><span>© 2026 BrandLens · Shadow Monarchs</span><span>Create • Review • Approve • Stay On-Brand</span></div></footer>
+
+<script src="js/checker.js"></script><script src="js/api.js"></script><script src="js/app.js"></script>
+<script>
+  document.getElementById('ic1').innerHTML = UI.icon('building', 26);
+  document.getElementById('ic2').innerHTML = UI.icon('pencil', 26);
+  const F = [
+    ['shield', 'Grounded in approved knowledge', 'Every finding points to the company rule or fact behind it.'],
+    ['search', 'Honest about uncertainty', 'If a claim cannot be verified, it is labelled Needs verification, not called false.'],
+    ['sparkles', 'Suggestions you control', 'Accept a fix, edit the text yourself, or dismiss it. Nothing changes silently.'],
+    ['users', 'Human approval', 'Companies approve, request changes or reject. They can allow auto-approval only for posts with no findings.'],
+    ['history', 'Full history', 'Versions, comments and decisions are recorded for every post.'],
+    ['bell', 'Clear notifications', 'Companies see the post number and the publisher’s details as soon as something is submitted.']
+  ];
+  document.getElementById('feat').innerHTML = F.map(f => `<div class="feature"><div class="ico">${UI.icon(f[0], 20)}</div><h3>${f[1]}</h3><p>${f[2]}</p></div>`).join('');
+  const s = API.session();
+  if (s) { const a = document.getElementById('navLogin'); a.textContent = 'Open workspace'; a.href = (s.user.role === 'company' ? 'company/' : 'creator/') + 'dashboard.html'; }
+</script>
+</body>
+</html>

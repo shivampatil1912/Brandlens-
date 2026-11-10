@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-base="../">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Review Requests · BrandLens</title>
+<link rel="icon" href="../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css"></head>
+<body><div id="app"></div>
+<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script>
+(async () => {
+  await API.ready;
+  const ctx = UI.shell({ role: 'company', active: 'requests', title: 'Review Requests' }); if (!ctx) return;
+  const el = ctx.content; el.innerHTML = UI.loading();
+  const FILTERS = [['all', 'All'], ['pending_review', 'Pending'], ['approved', 'Approved'], ['changes_requested', 'Changes requested'], ['rejected', 'Rejected']];
+  let subs = [], filter = FILTERS.some(f => f[0] === UI.q('status')) ? UI.q('status') : 'all';
+  function render() {
+    const list = subs.filter(s => filter === 'all' || s.status === filter);
+    el.innerHTML = `<div class="page-head"><div><h1>Review requests</h1><p>Posts submitted to your company. AI review is guidance only; you make the decision.</p></div></div>
+      <div class="chips" style="margin-bottom:16px">${FILTERS.map(([k, l]) => `<button class="chip ${k === filter ? 'on' : ''}" data-f="${k}">${l} (${k === 'all' ? subs.length : subs.filter(s => s.status === k).length})</button>`).join('')}</div>
+      <section class="card">${list.length ? `<div class="table-wrap"><table><thead><tr><th>Content title</th><th>Creator</th><th>AI check</th><th>Status</th><th>Submission date</th><th></th></tr></thead><tbody>
+        ${list.map(s => { const v = s.versions[s.versions.length - 1], c = BrandCheck.counts(v.findings || []);
+          return `<tr><td><div class="t-title">#${s.no} ${UI.esc(s.title)}</div><div class="sub">${UI.esc(s.channel)} · version ${v.no}</div></td>
+            <td>${UI.esc(s.creatorName)}<div class="sub">${UI.esc(s.creatorEmail)}</div></td>
+            <td>${c.total === 0 ? '<span class="badge b-ok">No findings</span>' : `<span class="badge ${c.high ? 'b-bad' : 'b-warn'}">${c.total} finding${c.total > 1 ? 's' : ''}</span>`}${s.autoApproved ? '<div class="sub">Auto-approved</div>' : ''}</td>
+            <td>${UI.badge(s.status)}</td><td class="sub">${UI.fmtDate(s.submittedAt)}</td>
+            <td><a class="btn btn-sm ${s.status === 'pending_review' ? 'btn-primary' : ''}" href="review.html?id=${s.id}">${s.status === 'pending_review' ? 'Review' : 'View'}</a></td></tr>`; }).join('')}
+        </tbody></table></div>` : UI.empty('inbox', subs.length ? 'Nothing in this filter' : 'No submissions yet', subs.length ? 'Try another filter.' : 'When a creator submits a post for review, it shows up here and you get a notification.')}</section>`;
+  }
+  el.addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (b) { filter = b.dataset.f; history.replaceState(null, '', filter === 'all' ? 'requests.html' : 'requests.html?status=' + filter); render(); } });
+  try { subs = await API.listSubmissions(); render(); } catch (e) { el.innerHTML = UI.empty('alert', 'Could not load requests', e.message, '<button class="btn" onclick="location.reload()">Retry</button>'); }
+})();
+</script></body></html>

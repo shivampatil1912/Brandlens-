@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en" data-base="../">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Submission · BrandLens</title>
+<link rel="icon" href="../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css"></head>
+<body><div id="app"></div>
+<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script>
+(async () => {
+  await API.ready;
+  const ctx = UI.shell({ role: 'creator', active: 'submissions', title: 'AI Review Report' }); if (!ctx) return;
+  const el = ctx.content, id = UI.q('id'), esc = UI.esc;
+  let sub, busy = false; el.innerHTML = UI.loading();
+  function render() {
+    const v = sub.versions[sub.versions.length - 1], f = v.findings || [], c = BrandCheck.counts(f);
+    const lastCo = sub.comments.slice().reverse().find(x => x.role === 'company' && x.decision);
+    const notice = {
+      pending_review: UI.banner('info', 'Waiting for ' + sub.companyName + ' to review', ' You will get a notification when they decide. You cannot edit while it is under review.', 'eye'),
+      approved: UI.banner('ok', 'Approved', sub.autoApproved ? ' BrandLens approved this automatically because no issues were found and ' + sub.companyName + ' allows it. It is ready to publish.' : ' ' + sub.companyName + ' approved this content. It is ready to publish.'),
+      rejected: UI.banner('bad', 'Rejected by ' + sub.companyName, lastCo ? ' “' + lastCo.text + '”' : '')
+    }[sub.status] || '';
+    el.innerHTML = `
+      <p style="margin-bottom:10px"><a class="btn btn-ghost btn-sm" href="submissions.html">← My submissions</a></p>
+      <div class="page-head"><div><h1>${esc(sub.title)}</h1><p>${esc(sub.channel)} for <b>${esc(sub.companyName)}</b> · version ${v.no}${sub.no ? ' · post #' + sub.no : ''}</p></div>${UI.badge(sub.status)}</div>
+      ${notice}
+      <div class="grid-2">
+        <div class="stack">
+          <section class="card"><div class="card-head"><h2>Your content</h2><span class="muted small">Version ${v.no}</span></div><div class="card-body"><div class="draft">${UI.highlight(v.text, f)}</div></div></section>
+          <section class="card card-pad"><div class="row between" style="margin-bottom:10px"><h2>Compliance score</h2><span class="badge b-muted">Rule-based check</span></div>${UI.scoreCard(f)}</section>
+          <section><h2 style="margin-bottom:12px">Findings</h2>${c.total === 0 ? UI.banner('ok', 'No issues found', '') : UI.groupedFindings(f)}</section>
+        </div>
+        <div class="stack">
+          <section class="card card-pad"><h2 style="margin-bottom:12px">Comments</h2>${UI.comments(sub.comments)}
+            <div class="field" style="margin:14px 0 0"><textarea class="textarea" id="cm" style="min-height:70px" placeholder="Add a comment"></textarea></div><button class="btn btn-sm" id="cmBtn" style="margin-top:8px">Post comment</button></section>
+          <section class="card card-pad"><h2 style="margin-bottom:12px">Version history</h2>${UI.timeline(sub.events)}</section>
+        </div>
+      </div>`;
+  }
+  el.addEventListener('click', async e => {
+    const mk = e.target.closest('mark.hl'); if (mk) return UI.flash('#fc-' + mk.dataset.fid);
+    const fc = e.target.closest('.finding'); if (fc) return UI.flash(`mark[data-fid="${fc.dataset.fid}"]`);
+    if (e.target.closest('#cmBtn') && !busy) {
+      busy = true; try { sub = await API.addComment(id, document.getElementById('cm').value); UI.toast('Comment posted.', 'ok'); render(); } catch (err) { UI.toast(err.message, 'bad'); } busy = false;
+    }
+  });
+  try {
+    sub = await API.getSubmission(id);
+    if (['draft', 'ai_checked', 'changes_requested'].includes(sub.status)) { location.replace('studio.html?draft=' + id); return; }
+    render();
+  } catch (e) { el.innerHTML = UI.empty('alert', 'Could not open this submission', e.message, '<a class="btn" href="submissions.html">Back to My Submissions</a>'); }
+})();
+</script></body></html>

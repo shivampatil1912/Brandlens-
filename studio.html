@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en" data-base="../">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Content Studio · BrandLens</title>
+<link rel="icon" href="../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css"></head>
+<body><div id="app"></div>
+<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script>
+(async () => {
+  await API.ready;
+  const ctx = UI.shell({ role: 'creator', active: 'studio', title: 'Content Studio' }); if (!ctx) return;
+  const el = ctx.content, esc = UI.esc; el.innerHTML = UI.loading();
+  const CHANNELS = ['Instagram Post', 'LinkedIn Post', 'Advertisement', 'Facebook Post', 'X Post', 'Blog', 'Marketing Email', 'Product Description', 'Other'];
+  const EDITABLE = ['draft', 'ai_checked', 'changes_requested'];
+  let sub = null, busy = false, savedText = '', saveTimer = null, lastSaved = null;
+  const $ = id => document.getElementById(id);
+
+  try {
+    const all = await API.listCompanies('');
+    const companies = all.filter(c => c.access === 'open' || c.access === 'granted');
+    if (UI.q('draft')) { sub = await API.getSubmission(UI.q('draft')); if (!EDITABLE.includes(sub.status)) { location.replace('report.html?id=' + sub.id); return; } }
+    if (!companies.length && !sub) {
+      el.innerHTML = `<div class="page-head"><div><h1>Content Studio</h1></div></div><section class="card">${UI.empty('building', 'No company to write for yet', all.length ? 'Request access to a company, or wait for approval, then come back.' : 'Companies appear once they register and complete their brand setup.', '<a class="btn btn-primary" href="companies.html">Find companies</a>')}</section>`; return;
+    }
+    const pre = (sub && sub.companyId) || UI.q('company') || (companies.length ? companies[0].id : '');
+    const latest = () => sub.versions[sub.versions.length - 1];
+    const locked = () => sub && sub.status !== 'draft';
+
+    el.innerHTML = `<div class="page-head"><div><h1>Content Studio</h1><p>Write your content, check it against the company’s rules, fix the issues, then submit it for approval.</p></div><div id="statusBadge"></div></div>
+      <div id="notice"></div>
+      <div class="grid-2">
+        <div class="stack">
+          <div class="row between" style="margin-bottom:12px;background:#F8FAFC;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r-m)">
+            <span class="muted small"><b>Hackathon Judge Demo:</b> Test compliance check with pre-built sample content:</span>
+            <button type="button" class="btn btn-sm" id="loadSampleBtn" style="border:1px dashed #6366f1;color:#4f46e5;background:#EEF2FF;font-weight:600">
+              ${UI.icon('sparkles', 15)} Load Sample Test Post
+            </button>
+          </div>
+          <form class="card card-pad" id="f" novalidate>
+            <div class="row" style="align-items:flex-start;gap:16px">
+              <div class="field grow" style="min-width:200px"><label for="co">Company</label><select class="select" id="co"><option value="">Choose a company…</option>${companies.map(c => `<option value="${c.id}" ${c.id === pre ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select><span class="err" id="e-co"></span></div>
+              <div class="field" style="min-width:190px"><label for="ch">Content type</label><select class="select" id="ch">${CHANNELS.map(c => `<option ${sub && sub.channel === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+            </div>
+            <div class="field"><label for="title">Content title</label><input class="input" id="title" maxlength="120" placeholder="e.g. X1 launch post" value="${esc(sub ? sub.title : '')}"><span class="err" id="e-title"></span></div>
+            <div class="field"><label for="text">Your content</label><textarea class="textarea" id="text" style="min-height:240px" placeholder="Write or paste the caption, description or message you want to publish.">${esc(sub ? latest().text : '')}</textarea><span class="err" id="e-text"></span></div>
+            <div class="row between"><span class="muted small"><span id="count">0</span> characters · <span class="saved" id="saved"></span></span>
+              <div class="row"><button type="button" class="btn" id="save">Save draft</button><button type="submit" class="btn btn-accent" id="check">${UI.icon('sparkles', 16)}Check content</button><button type="button" class="btn btn-primary" id="submit">${UI.icon('send', 16)}Submit for approval</button></div></div>
+            <p class="hint" id="submitHint" style="margin-top:8px;text-align:right"></p>
+          </form>
+          <div id="hlCard"></div>
+        </div>
+        <div class="stack" id="side"></div>
+      </div>`;
+
+    function text() { return $('text').value; }
+    function dirty() { return !sub || text().trim() !== latest().text.trim(); }
+    function valid() {
+      const e = { co: $('co').value ? '' : 'Choose a company.', title: $('title').value.trim() ? '' : 'Enter a content title.', text: text().trim().length >= 10 ? '' : 'Write at least a sentence of content.' };
+      Object.entries(e).forEach(([k, m]) => { $('e-' + k).textContent = m; (k === 'co' ? $('co') : $(k)).classList.toggle('invalid', !!m); });
+      return !Object.values(e).some(Boolean);
+    }
+    function quiet() { return $('co').value && $('title').value.trim() && text().trim().length >= 10; }
+
+    function paint() {
+      const checked = sub && latest().findings !== null, f = checked ? latest().findings : [], c = BrandCheck.counts(f), d = dirty();
+      $('statusBadge').innerHTML = sub ? UI.badge(sub.status) : '<span class="badge b-muted">New</span>';
+      $('count').textContent = text().length;
+      $('save').classList.toggle('hide', !!locked());
+      $('co').disabled = !!locked(); $('title').disabled = !!locked(); $('ch').disabled = !!locked();
+      $('check').innerHTML = (checked ? UI.icon('sparkles', 16) + 'Check again' : UI.icon('sparkles', 16) + 'Check content');
+      const can = checked && !d && !busy; $('submit').disabled = !can;
+      $('submit').innerHTML = UI.icon('send', 16) + (sub && sub.status === 'changes_requested' ? 'Resubmit for approval' : 'Submit for approval');
+      $('submitHint').textContent = !checked ? 'Check your content first. Submitting is a separate step.' : d ? 'You changed the text. Check it again before submitting.' : '';
+      const lastCo = sub && sub.comments.slice().reverse().find(x => x.role === 'company');
+      $('notice').innerHTML = sub && sub.status === 'changes_requested' ? UI.banner('warn', sub.companyName + ' asked for changes', lastCo ? ' “' + lastCo.text + '” Revise the content, check it again, then resubmit.' : ' Revise the content, check it again, then resubmit.') : '';
+      $('hlCard').innerHTML = checked && !d ? `<section class="card"><div class="card-head"><h2>Highlighted issues</h2><span class="muted small">Click a highlight to jump to its finding</span></div><div class="card-body"><div class="draft">${UI.highlight(latest().text, f)}</div></div></section>` : '';
+      $('side').innerHTML = !checked ? `<section class="card card-pad"><h2 style="margin-bottom:6px">Brand check</h2><p class="muted small">Press <b>Check content</b> to compare your text with the company’s rules and approved facts. You will see each issue, the rule behind it and a suggested fix.</p></section>`
+        : `<section class="card card-pad"><div class="row between" style="margin-bottom:10px"><h2>Compliance score</h2><span class="badge b-muted">Rule-based check</span></div>${d ? '<p class="muted small" style="margin-bottom:10px">Showing the last checked version. Check again to update it.</p>' : ''}${UI.scoreCard(f)}</section>
+          <section><h2 style="margin-bottom:6px">Findings</h2><p class="muted small" style="margin-bottom:12px">“Needs verification” means no approved fact covers it. It does not prove the claim is wrong. Only the company can approve content.</p>
+          ${c.total === 0 ? UI.banner('ok', 'No issues found', ' Your content matches ' + sub.companyName + '’s approved rules and facts.') : UI.groupedFindings(f, { actions: !d && !busy })}</section>`;
+    }
+
+    async function persistDraft(auto) {
+      sub = await API.saveDraft({ id: sub ? sub.id : null, companyId: $('co').value, title: $('title').value, channel: $('ch').value, text: text() });
+      lastSaved = new Date(); $('saved').textContent = (auto ? 'Autosaved ' : 'Saved ') + lastSaved.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+      history.replaceState(null, '', 'studio.html?draft=' + sub.id);
+    }
+    async function run(fn, ok) {
+      if (busy) return; busy = true; $('check').disabled = $('save').disabled = true; paint();
+      try { const r = await fn(); if (ok) UI.toast(typeof ok === 'function' ? ok(r) : ok, 'ok'); ctx.refreshBell(); }
+      catch (e) { UI.toast(e.message, 'bad'); }
+      busy = false; $('check').disabled = $('save').disabled = false; paint();
+    }
+
+    // autosave (drafts only, when the form is valid)
+    function schedule() { clearTimeout(saveTimer); if (locked()) return; saveTimer = setTimeout(async () => { if (busy || !quiet() || (sub && !dirty() && sub.title === $('title').value.trim())) return; try { await persistDraft(true); paint(); } catch (e) { $('saved').textContent = 'Autosave failed: ' + e.message; } }, 1500); }
+    ['text', 'title'].forEach(i => $(i).addEventListener('input', () => { paint(); schedule(); }));
+    ['co', 'ch'].forEach(i => $(i).addEventListener('change', () => { paint(); schedule(); }));
+
+    const sampleBtn = $('loadSampleBtn');
+    if (sampleBtn) {
+      sampleBtn.onclick = () => {
+        if (companies.length) $('co').value = companies[0].id;
+        $('ch').value = 'Instagram Post';
+        $('title').value = 'Festive Season Promotional Launch';
+        $('text').value = 'Our brand offers the most cheapest smartphones in India. Everyone can get premium quality at the lowest price guaranteed!';
+        paint(); schedule();
+        UI.toast('Sample post loaded! Click "Check content" to see AI findings.', 'ok');
+      };
+    }
+
+    $('save').onclick = () => { clearTimeout(saveTimer); if (!valid()) return; run(() => persistDraft(false), 'Draft saved.'); };
+    $('f').onsubmit = ev => {
+      ev.preventDefault(); clearTimeout(saveTimer); if (!valid()) return;
+      run(async () => {
+        if (!sub || sub.status === 'draft') { await persistDraft(false); sub = await API.analyse(sub.id); }
+        else if (dirty()) sub = await API.saveEdit(sub.id, text());
+        else sub = await API.analyse(sub.id);
+        $('text').value = latest().text; return sub;
+      }, s => 'Checked: ' + latest().findings.length + ' finding(s).');
+    };
+    $('submit').onclick = async () => {
+      if (busy || !sub || dirty() || latest().findings === null) return;
+      const open = BrandCheck.counts(latest().findings).open;
+      const ok = await UI.confirmBox({ title: 'Submit for approval?', confirmText: 'Submit', message: open ? open + ' finding' + (open > 1 ? 's are' : ' is') + ' still open. ' + sub.companyName + ' will see them. Submit anyway?' : 'Your content will be sent to ' + sub.companyName + '.' });
+      if (!ok) return;
+      busy = true; paint(); $('submit').innerHTML = '<span class="spinner"></span> Submitting…';
+      try { const r = await API.submitForReview(sub.id); UI.toast(r.status === 'approved' ? 'Approved automatically. No issues were found.' : 'Submitted to ' + r.companyName + '.', 'ok'); location.href = 'report.html?id=' + sub.id; }
+      catch (e) { UI.toast(e.message, 'bad'); busy = false; paint(); }
+    };
+
+    el.addEventListener('click', async e => {
+      const mk = e.target.closest('mark.hl'); if (mk) return UI.flash('#fc-' + mk.dataset.fid);
+      const fc = e.target.closest('.finding'); if (fc && !e.target.closest('button')) return UI.flash(`mark[data-fid="${fc.dataset.fid}"]`);
+      const b = e.target.closest('[data-act]'); if (!b || !fc) return; const fid = fc.dataset.fid, a = b.dataset.act;
+      if (a === 'accept') return run(async () => { sub = await API.applyFix(sub.id, fid); $('text').value = latest().text; }, 'Suggestion applied and content re-checked.');
+      if (a === 'dismiss') return run(async () => { sub = await API.dismissFinding(sub.id, fid); }, 'Finding dismissed. The company can still see it.');
+      if (a === 'edit') { const f = latest().findings.find(x => x.id === fid), t = $('text'); t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.focus(); if (f && f.start >= 0 && !dirty()) t.setSelectionRange(f.start, f.end); }
+    });
+    window.addEventListener('beforeunload', ev => { if (!locked() && quiet() && dirty() && !busy) { ev.preventDefault(); ev.returnValue = ''; } });
+    $('count').textContent = text().length; paint();
+    if (sub) $('saved').textContent = 'Last updated ' + UI.fmtDate(sub.updatedAt);
+  } catch (e) { el.innerHTML = UI.empty('alert', 'Could not open Content Studio', e.message, '<button class="btn" onclick="location.reload()">Retry</button>'); }
+})();
+</script></body></html>

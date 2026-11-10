@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-base="../">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard · BrandLens</title>
+<link rel="icon" href="../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css"></head>
+<body><div id="app"></div>
+<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script>
+(async () => {
+  await API.ready;
+  const ctx = UI.shell({ role: 'creator', active: 'dashboard', title: 'Dashboard' }); if (!ctx) return;
+  const el = ctx.content; el.innerHTML = UI.loading();
+  try {
+    const [subs, notes] = await Promise.all([API.listSubmissions(), API.notifications()]);
+    const n = st => subs.filter(s => s.status === st).length;
+    const link = s => (['draft', 'ai_checked', 'changes_requested'].includes(s.status) ? `studio.html?draft=${s.id}` : `report.html?id=${s.id}`);
+    el.innerHTML = `
+      <div class="page-head"><div><h1>Hi, ${UI.esc(ctx.user.name.split(' ')[0])}</h1><p>Write a post, check it against a company’s rules, then send it for approval.</p></div>
+        <div class="row"><a class="btn" href="companies.html">${UI.icon('search')}Find a company</a><a class="btn btn-primary" href="studio.html">${UI.icon('plus')}Create content</a></div></div>
+      <div class="banner info" style="margin-bottom:18px;background:#EEF2FF;border:1px solid #C7D2FE;color:#3730A3;padding:12px 16px;border-radius:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;font-weight:700">
+              ${UI.icon('sparkles', 18)} Hackathon Demo Workspace: Shivam Patil
+            </div>
+            <p style="margin:4px 0 0;font-size:13px;color:#4338CA">
+              Pre-loaded with <b>2 approved posts</b> and <b>1 post with AI suggestions</b> ready to inspect.
+            </p>
+          </div>
+          <div class="row" style="gap:8px">
+            <a class="btn btn-sm btn-primary" href="studio.html?draft=s_post_3">⚡ Open AI Check Demo Post</a>
+          </div>
+        </div>
+      </div>
+      <div class="bento">
+        <a class="stat big" href="studio.html"><span>Start something new</span><b>${UI.icon('plus', 40)}</b><span class="go">Create content →</span></a>
+        <a class="stat" href="submissions.html"><b>${subs.length}</b><span>Total posts</span></a>
+        <a class="stat" href="submissions.html?status=draft"><b>${n('draft') + n('ai_checked')}</b><span>Drafts</span></a>
+        <a class="stat" href="submissions.html?status=pending_review"><b>${n('pending_review')}</b><span>Under review</span></a>
+        <a class="stat ${n('changes_requested') ? 'hot' : ''}" href="submissions.html?status=changes_requested"><b>${n('changes_requested')}</b><span>Changes requested</span></a>
+        <a class="stat" href="submissions.html?status=approved"><b>${n('approved')}</b><span>Approved posts</span></a>
+      </div>
+      <div class="grid-2">
+        <section class="card"><div class="card-head"><h2>Recent submissions</h2><a class="btn btn-ghost btn-sm" href="submissions.html">View all</a></div>
+          ${subs.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Company</th><th>Status</th><th></th></tr></thead><tbody>
+            ${subs.slice(0, 6).map(s => `<tr><td><div class="t-title">${UI.esc(s.title)}</div><div class="sub">${UI.esc(s.channel)} · ${UI.fmtDate(s.updatedAt)}</div></td><td>${UI.esc(s.companyName)}</td><td>${UI.badge(s.status)}</td>
+              <td><a class="btn btn-sm" href="${link(s)}">${['draft', 'ai_checked'].includes(s.status) ? 'Continue' : s.status === 'changes_requested' ? 'Revise' : 'View'}</a></td></tr>`).join('')}</tbody></table></div>`
+            : UI.empty('file-text', 'No submissions yet', 'Pick a company and write your first post. BrandLens checks it before you submit.', '<a class="btn btn-primary" href="companies.html">Find a company</a>')}
+        </section>
+        <section class="card"><div class="card-head"><h2>Updates</h2></div><div class="card-body">
+          ${notes.length ? notes.slice(0, 6).map(x => `<a class="notif" href="${x.link}"><div class="ico">${UI.icon('bell', 16)}</div><div>${UI.esc(x.text)}<small>${UI.fmtDate(x.at)}</small></div></a>`).join('') : '<p class="muted">Decisions from companies will show up here.</p>'}
+        </div></section>
+      </div>`;
+  } catch (e) { el.innerHTML = UI.empty('alert', 'Could not load the dashboard', e.message, '<button class="btn" onclick="location.reload()">Retry</button>'); }
+})();
+</script></body></html>

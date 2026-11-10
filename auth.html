@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en" data-base="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in · BrandLens</title>
+<link rel="icon" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="auth">
+  <aside class="auth-art">
+    <a href="index.html" aria-label="BrandLens home"><img src="assets/logo.png" alt="BrandLens"></a>
+    <p id="artCopy"></p>
+  </aside>
+  <main class="auth-form"><div class="auth-box" id="box"></div></main>
+</div>
+<script src="js/checker.js"></script><script src="js/api.js"></script><script src="js/app.js"></script>
+<script>
+(async () => {
+  await API.ready;
+  if (API.ensureSeeded) await API.ensureSeeded();
+
+  const p = new URLSearchParams(location.search);
+  let role = p.get('role') === 'creator' ? 'creator' : 'company';
+  let mode = p.get('mode') === 'register' ? 'register' : 'login';
+  let isDemo = p.get('demo') === '1' || p.get('demo') === 'true';
+  if (isDemo) mode = 'login';
+
+  const DEMO_ACCOUNTS = {
+    company: { email: 'novatech12@gmail.com', pw: '12345678', label: 'NovaTech (Company Admin)' },
+    creator: { email: 'shivampatil123@gmail.com', pw: '12345678', label: 'Shivam Patil (Creator)' }
+  };
+
+  const dest = s => s.user.role === 'company' ? (s.company && s.company.setupComplete ? 'company/dashboard.html' : 'company/knowledge.html') : 'creator/dashboard.html';
+  const s0 = API.session();
+  if (s0 && (!p.get('role') || p.get('role') === s0.user.role) && !isDemo) { location.replace(dest(s0)); return; }
+  if (s0 && s0.user.role !== role && !isDemo) {
+    document.getElementById('box').innerHTML = `<h1>You are signed in as a ${s0.user.role}</h1><p class="muted" style="margin:8px 0 20px">${UI.esc(s0.user.email)} is signed in. Log out to use the ${role} portal.</p><div class="row"><button class="btn btn-primary" id="lo">Log out and continue</button><a class="btn" href="${dest(s0)}">Go to my workspace</a></div>`;
+    document.getElementById('artCopy').textContent = 'One account works in one portal at a time.';
+    document.getElementById('lo').onclick = async () => { await API.logout(); location.reload(); }; return;
+  }
+
+  const COPY = {
+    company: 'Set your brand rules once. Review every post with the evidence beside it.',
+    creator: 'Check your post against a company’s rules before you submit it.'
+  };
+  const box = document.getElementById('box');
+
+  function render(error) {
+    const co = role === 'company', reg = mode === 'register';
+    document.getElementById('artCopy').textContent = COPY[role];
+    document.title = (isDemo ? 'Judge Demo' : (reg ? 'Create account' : 'Sign in')) + ' · BrandLens';
+
+    const demoBanner = isDemo ? `
+      <div class="banner info" style="margin-bottom:16px;background:#EEF2FF;border:1px solid #C7D2FE;color:#3730A3;padding:12px 14px;border-radius:10px">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px">
+          ${UI.icon('sparkles', 18)} Hackathon Judge Demo Mode
+        </div>
+        <p style="margin:4px 0 0;font-size:13px;line-height:1.4;color:#4338CA">
+          Credentials are pre-filled for <b>${DEMO_ACCOUNTS[role].label}</b> with password <code>12345678</code>. Click <b>Sign in</b> below to enter the live workspace!
+        </p>
+      </div>` : '';
+
+    box.innerHTML = `
+      ${demoBanner}
+      <h1>${isDemo ? 'Judge Demo Login' : (reg ? 'Create your ' + role + ' account' : 'Welcome back')}</h1>
+      <p class="muted">${isDemo ? 'Explore BrandLens with a pre-configured ' + role + ' workspace.' : (reg ? (co ? 'Register your company to manage brand rules and approve posts.' : 'Sign up to write posts for the companies you work with.') : 'Sign in to your ' + role + ' workspace.')}</p>
+      <div class="seg" role="tablist">
+        <button type="button" role="tab" data-role="company" class="${co ? 'on' : ''}" aria-selected="${co}">Company</button>
+        <button type="button" role="tab" data-role="creator" class="${!co ? 'on' : ''}" aria-selected="${!co}">Creator</button>
+      </div>
+      <form id="f" novalidate>
+        ${error ? `<div class="form-error" role="alert">${UI.esc(error)}</div>` : ''}
+        ${reg ? (co ? field('companyName', 'Company name', 'text', 'e.g. NovaTech', 'organization') : field('name', 'Full name', 'text', 'Your name', 'name')) : ''}
+        ${field('email', reg && co ? 'Company email' : 'Email', 'email', 'you@example.com', 'email')}
+        ${field('password', 'Password', 'password', reg ? 'At least 8 characters' : 'Your password', reg ? 'new-password' : 'current-password')}
+        ${reg ? field('confirm', 'Confirm password', 'password', 'Repeat the password', 'new-password') : ''}
+        <label class="check" style="margin-bottom:16px"><input type="checkbox" id="remember" checked><span>Keep me signed in</span></label>
+        <button class="btn btn-primary btn-block" id="go" type="submit" style="padding:12px">${reg ? 'Create account' : 'Sign in'}</button>
+      </form>
+      ${isDemo ? `
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line);text-align:center" class="small muted">
+          <span>Testing both portals? </span>
+          <a href="#" id="swDemoRole" style="font-weight:600;color:var(--primary)">Switch to ${co ? 'Creator Demo' : 'Company Demo'} →</a>
+        </div>
+      ` : `
+        <p class="switch">${reg ? 'Already have an account? <a href="#" id="sw">Sign in</a>' : 'New to BrandLens? <a href="#" id="sw">Create an ' + role + ' account</a>'}</p>
+      `}
+      <div class="dev-note" style="margin-top:14px">
+        <b>Pre-configured Demo Accounts:</b><br>
+        Company: <code>novatech12@gmail.com</code> / <code>12345678</code><br>
+        Creator: <code>shivampatil123@gmail.com</code> / <code>12345678</code>
+      </div>`;
+
+    if (isDemo) {
+      const emailInput = document.getElementById('email');
+      const passInput = document.getElementById('password');
+      if (emailInput) emailInput.value = DEMO_ACCOUNTS[role].email;
+      if (passInput) passInput.value = DEMO_ACCOUNTS[role].pw;
+    }
+
+    box.querySelectorAll('[data-role]').forEach(b => b.onclick = () => {
+      role = b.dataset.role;
+      render();
+    });
+
+    const sw = document.getElementById('sw');
+    if (sw) {
+      sw.onclick = e => { e.preventDefault(); mode = reg ? 'login' : 'register'; render(); };
+    }
+
+    const swDemo = document.getElementById('swDemoRole');
+    if (swDemo) {
+      swDemo.onclick = e => {
+        e.preventDefault();
+        role = role === 'company' ? 'creator' : 'company';
+        render();
+      };
+    }
+
+    document.getElementById('f').onsubmit = submit;
+  }
+
+  function field(id, label, type, ph, ac) {
+    if (type === 'password') {
+      return `<div class="field">
+        <label for="${id}">${label}</label>
+        <div style="position:relative;display:flex;align-items:center;width:100%">
+          <input class="input" id="${id}" name="${id}" type="password" placeholder="${ph}" autocomplete="${ac}" style="padding-right:42px">
+          <button type="button" class="pw-toggle" data-for="${id}" aria-label="Show password" title="Show password" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--muted);padding:4px;display:inline-flex;align-items:center;justify-content:center;line-height:1">
+            ${UI.icon('eye', 18)}
+          </button>
+        </div>
+        <span class="err" id="e-${id}"></span>
+      </div>`;
+    }
+    return `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" name="${id}" type="${type}" placeholder="${ph}" autocomplete="${ac}"><span class="err" id="e-${id}"></span></div>`;
+  }
+
+  function setErr(id, msg) { const i = document.getElementById(id), e = document.getElementById('e-' + id); i.classList.toggle('invalid', !!msg); e.textContent = msg || ''; return !msg; }
+
+  // Global delegate for password toggle buttons
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.pw-toggle');
+    if (!btn) return;
+    const targetId = btn.dataset.for;
+    const inp = document.getElementById(targetId);
+    if (!inp) return;
+    const isPw = inp.type === 'password';
+    inp.type = isPw ? 'text' : 'password';
+    btn.innerHTML = UI.icon(isPw ? 'eye-off' : 'eye', 18);
+    const label = isPw ? 'Hide password' : 'Show password';
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', label);
+  });
+
+  async function submit(ev) {
+    ev.preventDefault();
+    const reg = mode === 'register', co = role === 'company', v = id => (document.getElementById(id) || {}).value || '';
+    let ok = true;
+    if (reg && co) ok = setErr('companyName', v('companyName').trim() ? '' : 'Enter your company name.') && ok;
+    if (reg && !co) ok = setErr('name', v('name').trim() ? '' : 'Enter your full name.') && ok;
+    ok = setErr('email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('email').trim()) ? '' : 'Enter a valid email address.') && ok;
+    ok = setErr('password', reg ? (v('password').length >= 8 ? '' : 'Use at least 8 characters.') : (v('password') ? '' : 'Enter your password.')) && ok;
+    if (reg) ok = setErr('confirm', v('confirm') === v('password') ? '' : 'Passwords do not match.') && ok;
+    if (!ok) return;
+    const btn = document.getElementById('go'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Please wait…';
+    try {
+      const payload = { role, email: v('email'), password: v('password'), name: v('name'), companyName: v('companyName'), remember: document.getElementById('remember').checked };
+      const s = reg ? await API.register(payload) : await API.login(payload);
+      location.href = (reg && co) ? 'company/knowledge.html?welcome=1' : dest(s);
+    } catch (e) {
+      const keep = { email: v('email'), name: v('name'), companyName: v('companyName') };
+      render(e.message);
+      Object.entries(keep).forEach(([k, val]) => { const i = document.getElementById(k); if (i) i.value = val; });
+    }
+  }
+  render();
+})();
+</script>
+</body>
+</html>

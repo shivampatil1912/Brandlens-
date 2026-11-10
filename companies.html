@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en" data-base="../">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Find Companies · BrandLens</title>
+<link rel="icon" href="../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css"></head>
+<body><div id="app"></div>
+<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script>
+(async () => {
+  await API.ready;
+  const ctx = UI.shell({ role: 'creator', active: 'companies', title: 'Find Companies' }); if (!ctx) return;
+  const el = ctx.content, esc = UI.esc;
+  el.innerHTML = `<div class="page-head"><div><h1>Find a company</h1><p>Companies that have opened their workspace to creators. Read their guidelines, then write content for them.</p></div></div>
+    <div class="search" style="margin-bottom:20px">${UI.icon('search')}<input class="input" id="q" type="search" placeholder="Search by company name or industry" aria-label="Search companies" autocomplete="off"></div>
+    <div id="list">${UI.loading()}</div>`;
+  const list = document.getElementById('list');
+  const ACC = { open: ['Open to all creators', 'ok'], granted: ['Access approved', 'ok'], pending: ['Request pending', 'warn'], declined: ['Access declined', 'bad'], none: ['Approval required', 'muted'] };
+  let t, token = 0;
+  const action = c => c.access === 'open' || c.access === 'granted' ? `<a class="btn btn-primary btn-sm" href="studio.html?company=${c.id}">Write content</a>`
+    : c.access === 'pending' ? '<button class="btn btn-sm" disabled>Request pending</button>' : `<button class="btn btn-primary btn-sm" data-req="${c.id}">${c.access === 'declined' ? 'Request again' : 'Request access'}</button>`;
+  async function load(q) {
+    const my = ++token;
+    try {
+      const cs = await API.listCompanies(q); if (my !== token) return;
+      list.innerHTML = cs.length ? `<div class="grid-eq">${cs.map(c => `<article class="card company-card"><div class="row"><div class="logo-tile">${esc(UI.initials(c.name))}</div><div class="grow"><h3>${esc(c.name)}</h3><span class="muted small">${esc(c.industry)}</span></div></div>
+          <p class="muted small" style="min-height:40px">${esc(c.description)}</p><div><span class="badge b-${ACC[c.access][1]}">${ACC[c.access][0]}</span></div>
+          <div class="row"><a class="btn btn-sm" href="company.html?id=${c.id}">${UI.icon('eye', 15)}View Brand Guidelines</a>${action(c)}</div></article>`).join('')}</div>`
+        : UI.empty('building', q ? 'No company matches “' + q + '”' : 'No companies yet', q ? 'Check the spelling or try a different word.' : 'Companies appear here once they register and complete their brand setup.');
+    } catch (e) { list.innerHTML = UI.empty('alert', 'Could not load companies', e.message, '<button class="btn" onclick="location.reload()">Retry</button>'); }
+  }
+  list.addEventListener('click', async e => {
+    const b = e.target.closest('[data-req]'); if (!b) return; b.disabled = true;
+    try { await API.requestAccess(b.dataset.req); UI.toast('Access requested. The company will review it.', 'ok'); load(document.getElementById('q').value); } catch (err) { UI.toast(err.message, 'bad'); b.disabled = false; }
+  });
+  document.getElementById('q').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => load(e.target.value), 200); });
+  load('');
+})();
+</script></body></html>

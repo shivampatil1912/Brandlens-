@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-base="../">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard · BrandLens</title>
+<link rel="icon" href="../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css"></head>
+<body><div id="app"></div>
+<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script>
+(async () => {
+  await API.ready;
+  const ctx = UI.shell({ role: 'company', active: 'dashboard', title: 'Dashboard' }); if (!ctx) return;
+  const el = ctx.content; el.innerHTML = UI.loading();
+  try {
+    const [subs, co, acts] = await Promise.all([API.listSubmissions(), API.myCompany(), API.activity()]);
+    const n = st => subs.filter(s => s.status === st).length, pend = subs.find(s => s.status === 'pending_review');
+    const pending = n('pending_review'), reqAcc = (co.accessList || []).filter(x => x.status === 'pending').length;
+    el.innerHTML = `
+      <div class="page-head"><div><h1>Welcome, ${UI.esc(co.name)}</h1><p>Here is what is happening with your content.</p></div>
+        ${pend ? `<a class="btn btn-primary" href="review.html?id=${pend.id}">${UI.icon('eye')}Review content</a>` : `<a class="btn" href="requests.html">${UI.icon('inbox')}Open review requests</a>`}</div>
+      ${!co.setupComplete ? UI.banner('warn', 'Finish your brand setup', ' Creators cannot find your company until you complete setup in Brand Knowledge.') + '<p style="margin:-6px 0 18px"><a class="btn btn-primary" href="knowledge.html">Go to Brand Knowledge</a></p>' : ''}
+      ${reqAcc ? UI.banner('info', reqAcc + ' creator access request' + (reqAcc > 1 ? 's' : ''), ' waiting for your decision.', 'users') + '<p style="margin:-6px 0 18px"><a class="btn" href="knowledge.html?tab=access">Review access requests</a></p>' : ''}
+      <div class="banner info" style="margin-bottom:18px;background:#EEF2FF;border:1px solid #C7D2FE;color:#3730A3;padding:12px 16px;border-radius:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;font-weight:700">
+              ${UI.icon('sparkles', 18)} Hackathon Demo Workspace: NovaTech
+            </div>
+            <p style="margin:4px 0 0;font-size:13px;color:#4338CA">
+              Brand rules and approved facts are loaded. <b>1 submission is waiting for your review</b>.
+            </p>
+          </div>
+          <div class="row" style="gap:8px">
+            <a class="btn btn-sm btn-primary" href="review.html?id=s_post_4">⚡ Review Pending Post #4</a>
+          </div>
+        </div>
+      </div>
+      <div class="bento">
+        <a class="stat big" href="requests.html?status=pending_review"><span>Pending reviews</span><b>${pending}</b><span class="go">${pending ? 'Review now' : 'Nothing waiting'} →</span></a>
+        <a class="stat" href="requests.html"><b>${subs.length}</b><span>Total submissions</span></a>
+        <a class="stat" href="requests.html?status=approved"><b>${n('approved')}</b><span>Approved content</span></a>
+        <a class="stat" href="requests.html?status=rejected"><b>${n('rejected')}</b><span>Rejected content</span></a>
+        <a class="stat" href="requests.html?status=changes_requested"><b>${n('changes_requested')}</b><span>Changes requested</span></a>
+      </div>
+      <div class="grid-2">
+        <section class="card"><div class="card-head"><h2>Recent submissions</h2><a class="btn btn-ghost btn-sm" href="requests.html">View all</a></div>
+          ${subs.length ? `<div class="table-wrap"><table><thead><tr><th>Content</th><th>Creator</th><th>Status</th><th></th></tr></thead><tbody>
+            ${subs.slice(0, 6).map(s => `<tr><td><div class="t-title">#${s.no} ${UI.esc(s.title)}</div><div class="sub">${UI.esc(s.channel)} · ${UI.fmtDate(s.submittedAt)}</div></td>
+              <td>${UI.esc(s.creatorName)}<div class="sub">${UI.esc(s.creatorEmail)}</div></td><td>${UI.badge(s.status)}</td>
+              <td><a class="btn btn-sm" href="review.html?id=${s.id}">${s.status === 'pending_review' ? 'Review' : 'View'}</a></td></tr>`).join('')}
+            </tbody></table></div>` : UI.empty('inbox', 'No submissions yet', co.setupComplete ? 'When a creator submits content for your company, it appears here.' : 'Complete your brand setup so creators can find your company.')}
+        </section>
+        <section class="card"><div class="card-head"><h2>Recent activity</h2><a class="btn btn-ghost btn-sm" href="history.html">Full history</a></div><div class="card-body">
+          ${acts.length ? UI.timeline(acts.slice(0, 6).reverse()) : '<p class="muted">No activity yet.</p>'}
+        </div></section>
+      </div>`;
+  } catch (e) { el.innerHTML = UI.empty('alert', 'Could not load the dashboard', e.message, '<button class="btn" onclick="location.reload()">Retry</button>'); }
+})();
+</script></body></html>

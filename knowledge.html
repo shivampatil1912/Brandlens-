@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en" data-base="../">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Brand Knowledge · BrandLens</title>
+<link rel="icon" href="../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css"></head>
+<body><div id="app"></div>
+<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script>
+(async () => {
+  await API.ready;
+  const ctx = UI.shell({ role: 'company', active: 'knowledge', title: 'Brand Knowledge' }); if (!ctx) return;
+  const el = ctx.content, esc = UI.esc;
+  const TABS = [['profile', 'Brand Profile'], ['voice', 'Brand Voice'], ['rules', 'Brand Rules'], ['facts', 'Approved Facts'], ['access', 'Creator Access']];
+  let co, tab = TABS.some(t => t[0] === UI.q('tab')) ? UI.q('tab') : 'profile', editing = null; // editing = {type,id}
+  const welcome = UI.q('welcome') === '1';
+  const SEVS = [['critical', 'Critical'], ['high', 'High'], ['medium', 'Medium'], ['info', 'Informational']];
+  const RULE_TYPES = [['terms', 'Avoid a term'], ['claims', 'Restrict a claim'], ['disclaimers', 'Require a disclaimer']];
+  let ruleType = 'terms';
+
+  async function load() { co = await API.myCompany(); render(); }
+  async function run(fn, ok) { try { await fn(); if (ok) UI.toast(ok, 'ok'); await load(); } catch (e) { UI.toast(e.message, 'bad'); } }
+
+  function steps() {
+    const st = API.setupStatus(co);
+    const row = (done, t, d) => `<div class="item"><span class="badge ${done ? 'b-ok' : 'b-muted'}">${done ? UI.icon('check', 14) : '·'}</span><div class="grow"><b>${t}</b><div class="muted small">${d}</div></div></div>`;
+    return `<section class="card card-pad" style="margin-bottom:20px"><div class="row between"><h2>${co.setupComplete ? 'Your workspace is open to creators' : 'Set up your workspace'}</h2>
+        ${co.setupComplete ? '<span class="badge b-ok">Live</span>' : `<button class="btn btn-accent" id="complete" ${st.ready ? '' : 'disabled'}>Open workspace to creators</button>`}</div>
+      <ul class="item-list" style="margin-top:6px">
+        ${row(st.profileDone, 'Brand profile', 'Add your industry and a short description.')}
+        ${row(st.rulesDone, 'Rules and facts', st.ruleCount + ' added. Add at least one fact or rule.')}
+        ${row(co.setupComplete, 'Open to creators', 'Creators can then find your company and write content for it.')}
+      </ul></section>`;
+  }
+
+  const field = (id, label, ph, hint, val = '', tag = 'input') => `<div class="field"><label for="${id}">${label}</label>${tag === 'textarea' ? `<textarea class="textarea" id="${id}" placeholder="${ph}" style="min-height:90px">${esc(val)}</textarea>` : `<input class="input" id="${id}" placeholder="${ph}" value="${esc(val)}">`}${hint ? `<span class="hint">${hint}</span>` : ''}</div>`;
+  const sevSel = cur => `<div class="field"><label for="a-sev">Severity</label><select class="select" id="a-sev">${SEVS.map(([k, l]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${l}</option>`).join('')}</select><span class="hint">How serious a violation of this rule is. It sets the weight in the compliance score.</span></div>`;
+  const actions = (type, id) => `<button class="x" data-edit="${type}:${id}" aria-label="Edit">${UI.icon('pencil', 15)}</button><button class="x" data-del="${type}:${id}" aria-label="Remove">${UI.icon('x', 16)}</button>`;
+
+  function panelRules() {
+    const k = co.knowledge, ed = editing && editing.type !== 'facts' ? k[editing.type].find(x => x.id === editing.id) : null;
+    const type = ed ? editing.type : ruleType;
+    const rows = [
+      ...k.terms.map(i => ['terms', i, `<b>Avoid “${esc(i.avoid)}”</b><div class="muted small">Use “${esc(i.use)}” instead</div>`]),
+      ...k.claims.map(i => ['claims', i, `<b>Restricted claim: “${esc(i.phrase)}”</b><div class="muted small">${i.safe ? 'Approved wording: ' + esc(i.safe) : 'Needs an approved fact before use'}${i.note ? ' · ' + esc(i.note) : ''}</div>`]),
+      ...k.disclaimers.map(i => ['disclaimers', i, `<b>Required disclaimer</b><div>${esc(i.text)}</div><div class="muted small">${i.trigger ? 'When the post mentions: ' + esc(i.trigger) : 'On every post'}</div>`])];
+    let formFields = '';
+    if (type === 'terms') formFields = field('a-avoid', 'Creators must not say', 'e.g. cell phone', '', ed && ed.avoid) + field('a-use', 'Say this instead', 'e.g. smartphone', '', ed && ed.use);
+    if (type === 'claims') formFields = field('a-phrase', 'Restricted phrase', 'e.g. cheapest', 'Flagged unless an approved fact contains it.', ed && ed.phrase) + field('a-safe', 'Approved wording (optional)', 'e.g. affordable', 'Offered to creators as a one-click fix.', ed && ed.safe) + field('a-note', 'Note (optional)', 'Why it is restricted', '', ed && ed.note);
+    if (type === 'disclaimers') formFields = field('a-text', 'Disclaimer text', 'e.g. *Terms and conditions apply.', '', ed && ed.text) + field('a-trigger', 'Trigger words (optional)', 'e.g. offer, discount, sale', 'Separate with commas. Leave empty to require it on every post.', ed && ed.trigger);
+    return `<div class="grid-2"><section class="card card-pad"><h2 style="margin-bottom:6px">Brand rules</h2><p class="muted small" style="margin-bottom:10px">What creators can and cannot say. BrandLens checks every post against these rules.</p>
+        ${rows.length ? `<ul class="item-list">${rows.map(([t, i, html]) => `<li class="item"><div class="grow">${html}</div>${UI.sevBadge(i.severity || (t === 'terms' ? 'medium' : 'high'))}${actions(t, i.id)}</li>`).join('')}</ul>` : '<p class="muted">No rules yet. Add your first rule.</p>'}</section>
+      <form class="card card-pad" id="addForm" data-type="${type}"><h3 style="margin-bottom:12px">${ed ? 'Edit rule' : 'Add a rule'}</h3>
+        ${ed ? '' : `<div class="field"><label for="r-type">Rule type</label><select class="select" id="r-type">${RULE_TYPES.map(([k, l]) => `<option value="${k}" ${k === type ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`}
+        ${formFields}${sevSel(ed ? ed.severity : (type === 'terms' ? 'medium' : 'high'))}
+        <div class="row"><button class="btn btn-primary" type="submit">${ed ? 'Save changes' : UI.icon('plus', 16) + 'Add rule'}</button>${ed ? '<button class="btn" type="button" id="cancelEdit">Cancel</button>' : ''}</div></form></div>`;
+  }
+
+  function panelFacts() {
+    const k = co.knowledge, ed = editing && editing.type === 'facts' ? k.facts.find(x => x.id === editing.id) : null;
+    return `<div class="grid-2"><section class="card card-pad"><h2 style="margin-bottom:6px">Approved facts</h2><p class="muted small" style="margin-bottom:10px">Verified company information. BrandLens uses it to check prices, dates and claims. Anything not covered here is marked Needs verification.</p>
+        ${k.facts.length ? `<ul class="item-list">${k.facts.map(i => `<li class="item"><div class="grow">${esc(i.text)}</div>${actions('facts', i.id)}</li>`).join('')}</ul>` : '<p class="muted">No facts yet.</p>'}</section>
+      <form class="card card-pad" id="addForm" data-type="facts"><h3 style="margin-bottom:12px">${ed ? 'Edit fact' : 'Add a fact'}</h3>${field('a-text', 'Fact', 'e.g. The X1 comes with a 2-year warranty.', '', ed && ed.text, 'textarea')}
+        <div class="row"><button class="btn btn-primary" type="submit">${ed ? 'Save changes' : UI.icon('plus', 16) + 'Add fact'}</button>${ed ? '<button class="btn" type="button" id="cancelEdit">Cancel</button>' : ''}</div></form></div>`;
+  }
+
+  function panelAccess() {
+    const list = co.accessList || [], pend = list.filter(x => x.status === 'pending'), ok = list.filter(x => x.status === 'approved');
+    const row = (x, btns) => `<li class="item"><div class="avatar" style="width:32px;height:32px;font-size:12px">${esc(UI.initials(x.name))}</div><div class="grow"><b>${esc(x.name)}</b><div class="muted small">${esc(x.email)} · ${UI.fmtDate(x.at)}</div></div>${btns}</li>`;
+    return `<div class="stack" style="max-width:760px"><section class="card card-pad"><h2 style="margin-bottom:12px">Who can write for ${esc(co.name)}</h2>
+        <label class="radio-card"><input type="radio" name="acc" value="open" ${(co.access || 'open') === 'open' ? 'checked' : ''}><span><b>Open to all creators</b><br><span class="muted small">Any registered creator can write content for you.</span></span></label>
+        <label class="radio-card"><input type="radio" name="acc" value="approval" ${co.access === 'approval' ? 'checked' : ''}><span><b>Approval required</b><br><span class="muted small">Creators send an access request. Only creators you approve can write for you.</span></span></label></section>
+      <section class="card card-pad"><h2 style="margin-bottom:8px">Access requests ${pend.length ? `<span class="badge b-warn">${pend.length}</span>` : ''}</h2>
+        ${pend.length ? `<ul class="item-list">${pend.map(x => row(x, `<button class="btn btn-primary btn-sm" data-acc="approve:${x.userId}">Approve</button><button class="btn btn-sm" data-acc="decline:${x.userId}">Decline</button>`)).join('')}</ul>` : '<p class="muted">No pending requests.</p>'}</section>
+      <section class="card card-pad"><h2 style="margin-bottom:8px">Approved creators</h2>
+        ${ok.length ? `<ul class="item-list">${ok.map(x => row(x, `<button class="btn btn-ghost btn-sm" data-acc="remove:${x.userId}">Remove</button>`)).join('')}</ul>` : '<p class="muted">No approved creators yet. When approval is required, creators you approve appear here.</p>'}</section></div>`;
+  }
+
+  function panel() {
+    if (tab === 'profile') return `<form id="profileForm" class="card card-pad" style="max-width:640px"><h2 style="margin-bottom:14px">Brand profile</h2>
+      ${field('p-name', 'Company name', '', '', co.name)}${field('p-ind', 'Industry', 'e.g. Consumer electronics', '', co.industry)}${field('p-web', 'Website (optional)', 'https://', '', co.website)}
+      ${field('p-desc', 'What does your company do?', 'A short description creators will see when they pick your company.', 'At least 10 characters.', co.description, 'textarea')}
+      <button class="btn btn-primary" type="submit">Save profile</button></form>`;
+    if (tab === 'voice') return `<form id="voiceForm" class="card card-pad" style="max-width:640px"><h2 style="margin-bottom:14px">Brand voice</h2>
+      <div class="field"><label for="v-tone">Tone</label><select class="select" id="v-tone">${['Professional', 'Friendly', 'Formal', 'Playful', 'Bold'].map(t => `<option ${co.voice.tone === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      ${field('v-pers', 'Personality', 'e.g. Helpful, curious and honest', '', co.voice.personality)}${field('v-style', 'Writing style', 'e.g. Short sentences, no jargon', '', co.voice.style)}
+      ${field('v-notes', 'Notes for creators', 'Anything else creators should know', '', co.voice.notes, 'textarea')}
+      <div class="field"><label for="v-ex">Maximum exclamation marks per post</label><input class="input" id="v-ex" type="number" min="0" style="max-width:140px" value="${co.voice.maxExclamations ?? ''}" placeholder="No limit"><span class="hint">Posts with more are flagged as a tone mismatch.</span></div>
+      <label class="check" style="margin-bottom:18px"><input type="checkbox" id="v-caps" ${co.voice.noAllCaps ? 'checked' : ''}><span>Flag words written in ALL CAPS</span></label>
+      <button class="btn btn-primary" type="submit">Save voice</button></form>`;
+    if (tab === 'rules') return panelRules();
+    if (tab === 'facts') return panelFacts();
+    return panelAccess();
+  }
+
+  function render() {
+    const pend = (co.accessList || []).filter(x => x.status === 'pending').length;
+    el.innerHTML = `<div class="page-head"><div><h1>Brand Knowledge</h1><p>The profile, voice, rules and facts BrandLens checks every post against.</p></div></div>
+      ${welcome && !co.setupComplete ? UI.banner('info', 'Welcome to BrandLens', ' Fill in your profile and add a few rules, then open your workspace to creators.', 'sparkles') : ''}
+      ${steps()}
+      <div class="tabs" role="tablist">${TABS.map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-tab="${k}" role="tab">${l}${k === 'access' && pend ? ` <span class="badge b-warn">${pend}</span>` : ''}</button>`).join('')}</div>
+      <div id="panel">${panel()}</div>`;
+  }
+
+  el.addEventListener('click', e => {
+    const t = e.target.closest('[data-tab]'); if (t) { tab = t.dataset.tab; editing = null; render(); return; }
+    const d = e.target.closest('[data-del]'); if (d) { const [type, id] = d.dataset.del.split(':'); run(() => API.removeKnowledge(type, id), 'Removed.'); return; }
+    const ed = e.target.closest('[data-edit]'); if (ed) { const [type, id] = ed.dataset.edit.split(':'); editing = { type, id }; render(); document.getElementById('addForm').scrollIntoView({ block: 'center' }); return; }
+    if (e.target.closest('#cancelEdit')) { editing = null; render(); return; }
+    const ac = e.target.closest('[data-acc]'); if (ac) { const [dec, uid] = ac.dataset.acc.split(':'); run(() => API.decideAccess(uid, dec), 'Done.'); return; }
+    if (e.target.closest('#complete')) run(() => API.completeSetup(), 'Your workspace is now open to creators.');
+  });
+  el.addEventListener('change', e => {
+    if (e.target.id === 'r-type') { ruleType = e.target.value; render(); }
+    if (e.target.name === 'acc') run(() => API.setAccessMode(e.target.value), 'Creator access updated.');
+  });
+  el.addEventListener('submit', e => {
+    e.preventDefault(); const f = e.target, v = id => (document.getElementById(id) || {}).value;
+    if (f.id === 'profileForm') return run(() => API.saveProfile({ name: v('p-name'), industry: v('p-ind'), website: v('p-web'), description: v('p-desc') }), 'Profile saved.');
+    if (f.id === 'voiceForm') return run(() => API.saveVoice({ tone: v('v-tone'), personality: v('v-pers'), style: v('v-style'), notes: v('v-notes'), maxExclamations: v('v-ex'), noAllCaps: document.getElementById('v-caps').checked }), 'Voice saved.');
+    if (f.id === 'addForm') {
+      const type = f.dataset.type, sev = (document.getElementById('a-sev') || {}).value, id = editing ? editing.id : undefined;
+      const m = { facts: { text: v('a-text') }, terms: { avoid: v('a-avoid'), use: v('a-use'), severity: sev }, claims: { phrase: v('a-phrase'), safe: v('a-safe'), note: v('a-note'), severity: sev }, disclaimers: { text: v('a-text'), trigger: v('a-trigger'), severity: sev } };
+      const wasEdit = !!editing; editing = null;
+      run(() => API.addKnowledge(type, Object.assign({ id }, m[type])), wasEdit ? 'Changes saved.' : 'Added.');
+    }
+  });
+  el.innerHTML = UI.loading(); load();
+})();
+</script></body></html>
