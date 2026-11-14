@@ -1,80 +1,76 @@
-# BrandLens — AI Brand Governance Platform (Production Hackathon Edition)
+# BrandLens — Enterprise AI Brand Governance Platform (Round 3 Final)
 
-**Tagline**: Create • Review • Approve • Stay On-Brand  
-**Team**: Shadow Monarchs · We Code 2026 Code Titan Hackathon
-
----
-
-## 🌐 How to Make This Website Live (Free & Instant)
-
-You can deploy BrandLens live online in less than 60 seconds:
-
-### ⚡ Method 1: Netlify (Drag & Drop — No Terminal Needed)
-1. Go to [netlify.com](https://www.netlify.com/) and log in.
-2. Go to the **Sites** tab.
-3. Simply **drag and drop this extracted project folder** into Netlify!
-4. Netlify will immediately publish your website with a live URL (e.g. `https://brandlens-demo.netlify.app`).
-
-### ⚡ Method 2: Vercel / GitHub
-- Push to GitHub or run `vercel` in terminal. Root `index.html` is automatically served.
-
-### ⚡ Method 3: Run Locally on Your Laptop
-1. Open this folder in **VS Code**.
-2. Right-click `index.html` -> **Open with Live Server**.
-3. Or in terminal:
-   ```bash
-   python3 -m http.server 5500
-   ```
-   Open `http://localhost:5500` in your web browser.
+**Tagline**: Create • Verify • Govern • Stay On-Brand  
+**Team**: Shadow Monarchs · Jhulelal Institute of Technology (JIT) · CodeTitans India 2026  
+**Live App**: https://brandlenslive.netlify.app/  
+**GitHub**: https://github.com/shivampatil1912/Brandlens-  
 
 ---
 
-## 🔑 Demo Accounts for Judges
+## 🚀 Quick Start (Clone & Run Locally)
 
-Both demo accounts are pre-loaded with rich, interconnected brand data and submissions:
+No build tools, bundlers, or paid API keys are required to run BrandLens locally:
 
-| Portal | Demo Email | Password | Role / Entity | Pre-loaded Content |
+```bash
+git clone https://github.com/shivampatil1912/Brandlens-.git
+cd Brandlens-
+# Option A: Python static server
+python3 -m http.server 5500
+# Option B: VS Code -> Right-click index.html -> "Open with Live Server"
+```
+Then open `http://localhost:5500` in your browser.
+
+### Run Automated Tests
+```bash
+node tests/test_round3.js
+```
+Verifies deterministic rule matching (including Hinglish claims), CIELAB ΔE color distance, WCAG 2.1 AA contrast math, PII redaction, and multi-language translation dictionaries.
+
+---
+
+## 🔑 Judge Demo Accounts (1-Click Access)
+
+Both demo accounts are accessible in 1 click via the **⚡ Demo Account** buttons on `index.html` (and pre-filled on `auth.html`), plus a **Switch to Creator / Company** toggle in the top bar:
+
+| Portal | Demo Email | Password | Role / Workspace | Pre-Loaded Demo State |
 |---|---|---|---|---|
-| **Company Demo** | `novatech12@gmail.com` | `12345678` | **Nova Tech** (Admin) | 4 Brand Rules, 4 Approved Facts, Disclaimers, and 1 Pending Review Request |
-| **Creator Demo** | `shivampatil123@gmail.com` | `12345678` | **Shivam Patil** (Creator) | 2 Approved Posts, 1 Active AI Review Post with 3 detected issues, 1 Pending Post |
+| **Company Demo** | `novatech12@gmail.com` | `12345678` | **Nova Tech** (Admin) | Official Logo, 2 Brand Assets, Brand Rules, 4 Approved Facts, 3 Submissions (`#1`, `#2` Approved; `#3` Pending Review) |
+| **Creator Demo** | `shivampatil123@gmail.com` | `12345678` | **Shivam Patil** (Creator) | 4 Total Posts (`#1`, `#2` Approved; `#3` Under Review; 1 AI-Checked Draft with Text + Vision findings) |
 
-*Password Toggle: Click the **eye icon** inside the password input to reveal or hide the password at any time.*
-
----
-
-## 👤 New User Registration & Real Workspaces
-
-BrandLens is not just a hardcoded demo. It also supports **real, functional new user workflows**:
-- **New Company Registration**:
-  - Sign up with a new company name and email.
-  - Complete brand setup in **Brand Knowledge Centre**: add Brand Profile, Brand Voice, Approved Facts, Terminology, Claims & Policies, and Disclaimers.
-  - Open workspace to creators!
-- **New Creator Registration**:
-  - Sign up with a new creator name and email.
-  - Discover registered companies in **Find Companies**.
-  - Write custom content in **Content Studio**, check it against brand rules in real-time, and submit for approval.
+*(Tip: Click the eye icon inside any password field to reveal/hide the password. Append `?reset=1` to `index.html` to reset demo data at any time.)*
 
 ---
 
-## 🧪 Recommended Judge Testing Walkthrough
+## ✨ Key Features & Round 3 Improvements Delivered
 
-1. **Homepage (`index.html`)**:
-   - Clean hero section with side-by-side **⚡ Demo Account** and **Get Started** buttons for both Company and Creator cards.
-2. **Creator Demo Flow**:
-   - Click **⚡ Demo Account** under "For Creators" -> Click **Sign in**.
-   - Notice the populated **Creator Dashboard**: 4 total posts, 2 approved posts, and 1 pending review.
-   - Click **⚡ Open AI Check Demo Post** or open `#3 Festive Season Promotional Launch`:
-     - Test prompt: *"Our brand offers the most cheapest smartphones in India. Everyone can get premium quality at the lowest price guaranteed!"*
-     - View the **AI Review Report**:
-       1. **Grammar Issue**: Flags `"most cheapest"` (double superlative). Click **Accept suggestion** -> rewrites to `"cheapest"`.
-       2. **Comparative Claim**: Flags `"cheapest smartphones in India"`. Click **Accept suggestion** -> rewrites to `"affordable smartphones in India"`.
-       3. **Absolute Guarantee**: Flags `"lowest price guaranteed"`. Click **Accept suggestion** -> rewrites to `"backed by our 2-year warranty"`.
-     - Click **Submit for approval** -> The submission status changes to **Pending review**!
-3. **Company Demo Flow**:
-   - Log out and click **⚡ Demo Account** under "For Companies" -> Click **Sign in**.
-   - In **Company Dashboard**, see the new pending review request in real-time.
-   - Open **Review Requests** (`requests.html`) -> Click **Review** on the submission.
-   - Inspect the submitted content side-by-side with the AI findings and creator details.
-   - Click **Approve** (or **Request changes** / **Reject**) with reviewer comments.
-4. **Verification**:
-   - Log back into Creator Demo -> The post status is now updated to **Approved** with the company's feedback comment!
+1. **Multimodal Vision & Image Accessibility Scanner (`js/vision.js`):**
+   - **Official Logo Verification:** Companies upload their official logo and approved offer/product images under **Brand Knowledge → Brand Assets & Visuals**; creator banners are verified against the company logo.
+   - **CIELAB Palette Compliance (ΔE):** Visual color pickers (no raw hex typing) + Canvas pixel clustering to detect off-brand color drift.
+   - **WCAG 2.1 AA/AAA Contrast & Clear-Space:** Verifies text-over-image contrast (`≥ 4.5:1`), 6% edge clear-space padding, and 1-click automated Alt-Text generation with automatic image compression.
+2. **Governance Insights & Guideline-Ambiguity Dashboard (`company/insights.html`):**
+   - Live KPIs (Avg Compliance Score, Turnaround Time, False-Alarm Rate, Multimodal/PII counts).
+   - **Violation Frequency Heatmap** (Channels × Rule Categories).
+   - **Guideline Ambiguity Telemetry** scoring rules by creator dismissal and reviewer false-alarm rates.
+3. **Hybrid Database & Responsible AI Trust Suite (`js/cloud.js`, `js/trust.js`):**
+   - **Hybrid Persistence:** Zero-config transactional **IndexedDB (`BrandLensDB`)** + optional **BYOD External Cloud Database** connector in **Company Settings** (`supabase_schema.sql` included for 1-click PostgreSQL setup).
+   - **Client-Side PII Shield:** Detects and masks emails, phone numbers, card numbers, PAN IDs, and API keys before analysis.
+   - **Reviewer False-Alarm Loop & Audit Export:** Reviewers can mark false alarms on any finding; 1-click **Export CSV / Audit JSON** on `Insights`, `History`, and `Report`.
+4. **India-First & Usability Upgrades (`js/checker.js`, `js/i18n.js`):**
+   - **Hinglish Claim Detector:** Flags unverified Indian market hype (*"sabse sasta"*, *"100% pakka"*, *"ekdum free"*, etc.).
+   - **Multi-Language UI:** Globe dropdown (`🌐 EN / हिन्दी / मराठी`) across Home, Auth, Company, and Creator portals.
+   - **Creator Productivity:** `Fix All Safe Issues`, `Before vs After Score`, `Live Channel Preview`, `Use Company Asset`, `.txt/.md` draft import, Printable Verification Certificate on approved posts, and `Delete` for unsubmitted drafts.
+
+---
+
+## 📁 Project Structure
+
+- `index.html` & `auth.html` — Landing page & dual-portal authentication
+- `js/checker.js` — Sub-50ms deterministic text & Hinglish compliance engine
+- `js/vision.js` — Canvas-based CIELAB palette, WCAG contrast, logo & alt-text scanner
+- `js/trust.js` — Client-side PII Shield, BroadcastChannel sync, CSV/JSON audit exporter
+- `js/cloud.js` — IndexedDB transactional store & BYOD cloud REST adapter (`supabase_schema.sql`)
+- `js/i18n.js` — Lossless English / Hindi / Marathi UI translation engine
+- `js/api.js` & `js/app.js` — Decoupled async service layer & shared shell/UI components
+- `company/` — `dashboard.html`, `knowledge.html`, `requests.html`, `review.html`, `insights.html`, `history.html`, `settings.html`
+- `creator/` — `dashboard.html`, `companies.html`, `company.html`, `studio.html`, `submissions.html`, `report.html`
+- `tests/test_round3.js` — Automated unit test suite

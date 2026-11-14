@@ -327,13 +327,13 @@ input[type="password"]::-ms-clear {
 <link rel="stylesheet" href="../css/style.css">
 <link rel="stylesheet" href="../style.css"></head>
 <body><div id="app"></div>
-<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script src="../js/checker.js"></script><script src="../js/vision.js"></script><script src="../js/cloud.js"></script><script src="../js/trust.js"></script><script src="../js/api.js"></script><script src="../js/i18n.js"></script><script src="../js/app.js"></script>
 <script>
 (async () => {
   await API.ready;
   const ctx = UI.shell({ role: 'company', active: 'knowledge', title: 'Brand Knowledge' }); if (!ctx) return;
   const el = ctx.content, esc = UI.esc;
-  const TABS = [['profile', 'Brand Profile'], ['voice', 'Brand Voice'], ['rules', 'Brand Rules'], ['facts', 'Approved Facts'], ['access', 'Creator Access']];
+  const TABS = [['profile', 'Brand Profile'], ['voice', 'Brand Voice'], ['rules', 'Brand Rules'], ['facts', 'Approved Facts'], ['assets', 'Brand Assets & Visuals'], ['access', 'Creator Access']];
   let co, tab = TABS.some(t => t[0] === UI.q('tab')) ? UI.q('tab') : 'profile', editing = null; // editing = {type,id}
   const welcome = UI.q('welcome') === '1';
   const SEVS = [['critical', 'Critical'], ['high', 'High'], ['medium', 'Medium'], ['info', 'Informational']];
@@ -341,7 +341,42 @@ input[type="password"]::-ms-clear {
   let ruleType = 'terms';
 
   async function load() { co = await API.myCompany(); render(); }
-  async function run(fn, ok) { try { await fn(); if (ok) UI.toast(ok, 'ok'); await load(); } catch (e) { UI.toast(e.message, 'bad'); } }
+  async function run(fn, ok) { try { await fn(); if (ok) UI.toast(ok, 'ok'); 
+  el.addEventListener('change', e => {
+    if (e.target.id === 'logoFile') {
+      const f = e.target.files && e.target.files[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = async () => { const img = await BrandVision.compressImage(r.result, 400, 0.88); run(() => API.saveLogo(img), 'Official company logo updated.'); };
+      r.readAsDataURL(f);
+    }
+    if (e.target.id === 'ast-file') {
+      const f = e.target.files && e.target.files[0];
+      const lbl = document.getElementById('ast-fname');
+      if (lbl) lbl.textContent = f ? f.name : 'No file chosen';
+    }
+    if (e.target.classList.contains('brand-col')) {
+      const span = e.target.nextElementSibling;
+      if (span) span.textContent = e.target.value.toUpperCase();
+    }
+  });
+  el.addEventListener('click', e => {
+    if (e.target.closest('#genLogoBtn')) return run(() => API.saveLogo(BrandVision.generateSampleLogo(co.name)), 'Generated official logo for ' + co.name + '.');
+    if (e.target.closest('#delLogoBtn')) return run(() => API.saveLogo(''), 'Logo removed.');
+    if (e.target.closest('#addColorBtn')) {
+      const cols = Array.from(document.querySelectorAll('.brand-col')).map(i => i.value.toUpperCase());
+      cols.push('#F59E0B');
+      return run(() => API.saveVisionSettings({ brandColors: cols }), 'Color added.');
+    }
+    const dc = e.target.closest('.del-col');
+    if (dc) {
+      const cols = Array.from(document.querySelectorAll('.brand-col')).map(i => i.value.toUpperCase());
+      cols.splice(Number(dc.dataset.idx), 1);
+      return run(() => API.saveVisionSettings({ brandColors: cols }), 'Color removed.');
+    }
+    const da = e.target.closest('[data-del-asset]');
+    if (da) return run(() => API.removeBrandAsset(da.dataset.delAsset), 'Asset removed.');
+  });
+  await load(); } catch (e) { UI.toast(e.message, 'bad'); } }
 
   function steps() {
     const st = API.setupStatus(co);
@@ -406,6 +441,67 @@ input[type="password"]::-ms-clear {
         ${ok.length ? `<ul class="item-list">${ok.map(x => row(x, `<button class="btn btn-ghost btn-sm" data-acc="remove:${x.userId}">Remove</button>`)).join('')}</ul>` : '<p class="muted">No approved creators yet. When approval is required, creators you approve appear here.</p>'}</section></div>`;
   }
 
+
+  function panelAssets() {
+    const k = co.knowledge || {};
+    const cols = (k.brandColors && k.brandColors.length) ? k.brandColors : ['#1E3A5F', '#0D9488', '#F8FAFC'];
+    const mc = Number(k.minContrast || 4.5);
+    const logo = k.brandLogo || '';
+    const assets = k.brandAssets || [];
+    return `<div class="grid-2">
+      <div class="stack">
+        <section class="card card-pad">
+          <h2 style="margin-bottom:6px">Official Company Logo</h2>
+          <p class="muted small" style="margin-bottom:12px">Upload your official logo. BrandLens verifies creator banners against this logo to detect missing or altered branding.</p>
+          <div class="row" style="gap:14px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+            ${logo ? `<img src="${logo}" alt="Official company logo" style="max-width:180px;max-height:70px;border-radius:8px;border:1px solid var(--line);padding:4px;background:#fff">` : '<div class="muted small" style="padding:14px;border:1px dashed var(--line);border-radius:8px">No official logo uploaded yet</div>'}
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <label class="btn btn-primary btn-sm" style="margin:0;cursor:pointer">${UI.icon('image', 15)} Upload Logo<input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="display:none"></label>
+            <button type="button" class="btn btn-sm" id="genLogoBtn">${UI.icon('sparkles', 14)} Generate Default Logo</button>
+            ${logo ? '<button type="button" class="btn btn-ghost btn-sm" id="delLogoBtn">Remove</button>' : ''}
+          </div>
+        </section>
+
+        <form id="visionForm" class="card card-pad">
+          <h2 style="margin-bottom:6px">Brand Colors &amp; Readability</h2>
+          <p class="muted small" style="margin-bottom:12px">Click any color box to pick your approved brand colors (no hex typing needed).</p>
+          <div class="field">
+            <label>Approved Brand Colors</label>
+            <div id="colorPickers" class="row" style="gap:10px;flex-wrap:wrap;margin-top:4px">
+              ${cols.map((c, idx) => `<div style="display:flex;align-items:center;gap:4px;background:#F8FAFC;padding:4px 8px;border:1px solid var(--line);border-radius:8px"><input type="color" class="brand-col" value="${esc(c)}" style="width:32px;height:28px;border:none;background:none;cursor:pointer;padding:0"><span class="small muted">${esc(c)}</span>${cols.length > 1 ? `<button type="button" class="x del-col" data-idx="${idx}" aria-label="Remove color" style="padding:2px">${UI.icon('x', 13)}</button>` : ''}</div>`).join('')}
+              <button type="button" class="btn btn-sm" id="addColorBtn">${UI.icon('plus', 14)} Add Color</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="v-contrast">Text-over-Image Readability Standard</label>
+            <select class="select" id="v-contrast">
+              <option value="4.5" ${mc < 6 ? 'selected' : ''}>Standard Readability — WCAG 2.1 AA (4.5:1)</option>
+              <option value="7.0" ${mc >= 6 ? 'selected' : ''}>High Contrast — WCAG 2.1 AAA (7.0:1)</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" type="submit">Save Visual Rules</button>
+        </form>
+      </div>
+
+      <div class="stack">
+        <form id="assetForm" class="card card-pad">
+          <h2 style="margin-bottom:6px">Add Approved Offer / Product Images</h2>
+          <p class="muted small" style="margin-bottom:12px">Upload approved product photos, offer banners, or badges that creators can view and use in their posts.</p>
+          <div class="field"><label for="ast-title">Asset Title</label><input class="input" id="ast-title" placeholder="e.g. Festive Offer Banner 20% Off"></div>
+          <div class="field"><label for="ast-type">Asset Type</label><select class="select" id="ast-type"><option value="offer">Offer / Promo Banner</option><option value="product">Product Photo</option><option value="badge">Campaign Badge</option></select></div>
+          <div class="field"><label class="btn btn-sm" style="cursor:pointer;display:inline-flex;width:auto">${UI.icon('image', 15)} Choose Image File<input type="file" id="ast-file" accept="image/png,image/jpeg,image/webp" style="display:none"></label> <span id="ast-fname" class="muted small" style="margin-left:8px">No file chosen</span></div>
+          <button class="btn btn-primary btn-sm" type="submit">${UI.icon('plus', 15)} Upload &amp; Save Asset</button>
+        </form>
+
+        <section class="card card-pad">
+          <h2 style="margin-bottom:10px">Approved Asset Library (${assets.length})</h2>
+          ${assets.length ? `<div class="stack" style="gap:10px">${assets.map(a => `<div class="item" style="gap:12px;align-items:center"><img src="${a.dataUrl}" alt="${esc(a.title)}" style="width:64px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--line)"><div class="grow"><b>${esc(a.title)}</b><div class="muted small">${esc(a.type)}</div></div><button type="button" class="x" data-del-asset="${a.id}" aria-label="Delete asset">${UI.icon('x', 16)}</button></div>`).join('')}</div>` : '<p class="muted small">No offer or product images uploaded yet.</p>'}
+        </section>
+      </div>
+    </div>`;
+  }
+
   function panel() {
     if (tab === 'profile') return `<form id="profileForm" class="card card-pad" style="max-width:640px"><h2 style="margin-bottom:14px">Brand profile</h2>
       ${field('p-name', 'Company name', '', '', co.name)}${field('p-ind', 'Industry', 'e.g. Consumer electronics', '', co.industry)}${field('p-web', 'Website (optional)', 'https://', '', co.website)}
@@ -420,6 +516,7 @@ input[type="password"]::-ms-clear {
       <button class="btn btn-primary" type="submit">Save voice</button></form>`;
     if (tab === 'rules') return panelRules();
     if (tab === 'facts') return panelFacts();
+    if (tab === 'assets') return panelAssets();
     return panelAccess();
   }
 
@@ -459,7 +556,24 @@ input[type="password"]::-ms-clear {
   });
   el.addEventListener('submit', e => {
     e.preventDefault(); const f = e.target, v = id => (document.getElementById(id) || {}).value;
-    if (f.id === 'profileForm') return run(() => API.saveProfile({ name: v('p-name'), industry: v('p-ind'), website: v('p-web'), description: v('p-desc') }), 'Profile saved.');
+    if (f.id === 'visionForm') {
+        const cols = Array.from(document.querySelectorAll('.brand-col')).map(i => i.value.toUpperCase());
+        const mc = parseFloat(document.getElementById('v-contrast').value) || 4.5;
+        return run(() => API.saveVisionSettings({ brandColors: cols, minContrast: mc }), 'Visual brand rules saved.');
+      }
+      if (f.id === 'assetForm') {
+        const title = document.getElementById('ast-title').value.trim();
+        const type = document.getElementById('ast-type').value;
+        const fileEl = document.getElementById('ast-file');
+        const file = fileEl.files && fileEl.files[0];
+        if (!title) return UI.toast('Enter an asset title.', 'bad');
+        if (!file) return UI.toast('Choose an image file first.', 'bad');
+        const reader = new FileReader();
+        reader.onload = async () => { const img = await BrandVision.compressImage(reader.result, 800, 0.82); run(() => API.addBrandAsset({ title, type, dataUrl: img }), 'Brand asset uploaded.'); };
+        reader.readAsDataURL(file);
+        return;
+      }
+      if (f.id === 'profileForm') return run(() => API.saveProfile({ name: v('p-name'), industry: v('p-ind'), website: v('p-web'), description: v('p-desc') }), 'Profile saved.');
     if (f.id === 'voiceForm') return run(() => API.saveVoice({ tone: v('v-tone'), personality: v('v-pers'), style: v('v-style'), notes: v('v-notes'), maxExclamations: v('v-ex'), noAllCaps: document.getElementById('v-caps').checked }), 'Voice saved.');
     if (f.id === 'addForm') {
       const type = f.dataset.type, sev = (document.getElementById('a-sev') || {}).value, id = editing ? editing.id : undefined;

@@ -29,7 +29,11 @@
     trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
     'eye-off': '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>',
-    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    'bar-chart': '<line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/>',
+    image: '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+    flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>'
   };
   const icon = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -64,7 +68,7 @@
   const empty = (ic, title, text, action = '') => `<div class="empty"><div class="ic-wrap">${icon(ic, 22)}</div><h3>${esc(title)}</h3><p>${esc(text)}</p>${action}</div>`;
   const banner = (type, title, text, ic) => `<div class="banner ${type}">${icon(ic || (type === 'ok' ? 'check-circle' : 'alert'), 20)}<div><strong>${esc(title)}</strong>${text ? esc(text) : ''}</div></div>`;
 
-  const CAT = { terminology: 'Terminology', claim: 'Claim', fact: 'Facts & figures', disclaimer: 'Disclaimer', tone: 'Tone', improvement: 'Writing', grammar: 'Grammar' };
+  const CAT = { terminology: 'Terminology', claim: 'Claim', fact: 'Facts & figures', disclaimer: 'Disclaimer', tone: 'Tone', improvement: 'Writing', grammar: 'Grammar', vision: 'Visual & Accessibility' };
   const FSTAT = { confirmed_mismatch: ['Confirmed mismatch', 'bad'], potential_issue: ['Potential issue', 'info'], needs_verification: ['Needs verification', 'warn'], suggestion: ['Optional suggestion', 'muted'] };
   const SEV = { critical: 'Critical', high: 'High', medium: 'Medium', info: 'Informational', low: 'Informational' };
   const sevKey = f => (f.severity === 'low' ? 'info' : f.severity);
@@ -81,15 +85,21 @@
     }
     return out + esc(text.slice(pos));
   }
-  function findingCard(f, { actions = false } = {}) {
-    const [sl, sc] = FSTAT[f.status] || [f.status, 'muted'], dismissed = f.decision === 'dismissed';
-    return `<article class="finding sev-${sevKey(f)}${dismissed ? ' is-dismissed' : ''}" id="fc-${f.id}" data-fid="${f.id}">
-      <div class="finding-top"><span class="sev sev-${sevKey(f)}">${SEV[f.severity]} severity</span><span class="cat">${CAT[f.category] || f.category}</span><span class="badge b-${sc}">${sl}</span>${dismissed ? '<span class="badge b-muted">Dismissed</span>' : ''}</div>
-      ${f.excerpt && f.start >= 0 ? `<blockquote class="excerpt">${esc(f.excerpt)}</blockquote>` : '<blockquote class="excerpt missing">Not in the post yet</blockquote>'}
+  function findingCard(f, { actions = false, reviewActions = false } = {}) {
+    const [sl, sc] = FSTAT[f.status] || [f.status, 'muted'];
+    const dismissed = f.decision === 'dismissed', falseAlarm = f.decision === 'false_alarm';
+    const muted = dismissed || falseAlarm;
+    const excerptHtml = f.excerpt && f.start >= 0 ? `<blockquote class="excerpt">${esc(f.excerpt)}</blockquote>`
+      : f.category === 'vision' && f.excerpt ? `<blockquote class="excerpt">${esc(f.excerpt)}</blockquote>`
+      : '<blockquote class="excerpt missing">Not in the post yet</blockquote>';
+    return `<article class="finding sev-${sevKey(f)}${muted ? ' is-dismissed' : ''}" id="fc-${f.id}" data-fid="${f.id}">
+      <div class="finding-top"><span class="sev sev-${sevKey(f)}">${SEV[f.severity]} severity</span><span class="cat">${CAT[f.category] || f.category}</span><span class="badge b-${sc}">${sl}</span>${dismissed ? '<span class="badge b-muted">Dismissed</span>' : ''}${falseAlarm ? '<span class="badge b-warn">False alarm</span>' : ''}</div>
+      ${excerptHtml}
       <p class="why">${esc(f.reason)}</p>
       <dl class="meta"><dt>Related rule</dt><dd>${esc(f.rule)}</dd><dt>Evidence</dt><dd>${esc(f.evidence)}</dd></dl>
       <div class="suggest">${icon('sparkles', 16)}<div><strong>Suggestion</strong><br>${esc(f.suggestion)}${f.fix && f.fix.type === 'append' ? `<div class="addition">${esc(f.fix.text)}</div>` : ''}</div></div>
-      ${actions && !dismissed ? `<div class="finding-actions">${f.fix ? '<button class="btn btn-primary btn-sm" data-act="accept">Accept suggestion</button>' : ''}<button class="btn btn-sm" data-act="edit">Edit manually</button><button class="btn btn-ghost btn-sm" data-act="dismiss">Dismiss</button></div>` : ''}
+      ${actions && !muted ? `<div class="finding-actions">${f.fix ? '<button class="btn btn-primary btn-sm" data-act="accept">Accept suggestion</button>' : ''}${f.category !== 'vision' ? '<button class="btn btn-sm" data-act="edit">Edit manually</button>' : ''}<button class="btn btn-ghost btn-sm" data-act="dismiss">Dismiss</button></div>` : ''}
+      ${reviewActions && !muted ? `<div class="finding-actions"><button class="btn btn-ghost btn-sm" data-act="false_alarm">${icon('flag', 14)}Mark false alarm</button></div>` : ''}
     </article>`;
   }
   /* findings grouped by the four categories */
@@ -97,6 +107,25 @@
     const out = GROUPS.map(([k, label, ic]) => { const items = f.filter(x => groupOf(x) === k); return items.length ? `<h3 class="group-title">${icon(ic, 17)}${label} (${items.length})</h3><div class="stack">${items.map(x => findingCard(x, opts)).join('')}</div>` : ''; }).join('');
     return out;
   }
+
+  function scoreDeltaCard(versions) {
+    if (!Array.isArray(versions) || versions.length < 2) return '';
+    const checked = versions.filter(v => Array.isArray(v.findings));
+    if (checked.length < 2) return '';
+    const v1 = checked[0], v2 = checked[checked.length - 1];
+    if (v1.no === v2.no) return '';
+    const s1 = BrandCheck.score(v1.findings).value, s2 = BrandCheck.score(v2.findings).value;
+    const diff = s2 - s1;
+    const cls = diff > 0 ? 'b-ok' : diff < 0 ? 'b-warn' : 'b-muted';
+    const lbl = diff > 0 ? `+${diff} pts improved` : diff < 0 ? `${diff} pts` : 'Unchanged';
+    return `<section class="card card-pad" style="margin-bottom:14px;background:#F8FAFC">
+      <div class="row between" style="gap:10px;flex-wrap:wrap">
+        <div><b style="font-size:.9rem">Before vs After Score</b><div class="muted small">Initial v${v1.no}: <b>${s1}/100</b> &rarr; Latest v${v2.no}: <b>${s2}/100</b></div></div>
+        <span class="badge ${cls}">${lbl}</span>
+      </div>
+    </section>`;
+  }
+
   function scoreCard(findings) {
     const sc = BrandCheck.score(findings), col = sc.value >= 90 ? '#14703A' : sc.value >= 70 ? '#A8650A' : '#B91C1C';
     return `<div class="score"><div class="ring" style="--v:${sc.value};--c:${col}"><span>${sc.value}</span></div><div><b>${sc.label}</b>
@@ -124,7 +153,7 @@
 
   /* ---------- shell ---------- */
   const NAV = {
-    company: [['dashboard', 'Dashboard', 'layout-dashboard'], ['knowledge', 'Brand Knowledge', 'book-open'], ['requests', 'Review Requests', 'inbox'], ['history', 'Activity History', 'history'], ['settings', 'Settings', 'sliders']],
+    company: [['dashboard', 'Dashboard', 'layout-dashboard'], ['knowledge', 'Brand Knowledge', 'book-open'], ['requests', 'Review Requests', 'inbox'], ['insights', 'Insights', 'bar-chart'], ['history', 'Activity History', 'history'], ['settings', 'Settings', 'sliders']],
     creator: [['dashboard', 'Dashboard', 'layout-dashboard'], ['companies', 'Find Companies', 'building'], ['studio', 'New Content', 'pencil'], ['submissions', 'My Submissions', 'file-text']]
   };
 
@@ -138,13 +167,15 @@
         <aside class="sidebar" id="sidebar">
           <a class="brand" href="${BASE}index.html"><img src="${BASE}assets/logo-mark.png" alt="">BrandLens</a>
           <div class="ws"><span style="opacity:.7">${role === 'company' ? 'Company workspace' : 'Signed in as creator'}</span><b>${esc(role === 'company' ? s.company.name : s.user.name)}</b></div>
-          <nav class="nav" aria-label="Main">${NAV[role].map(([k, l, i]) => `<a href="${k}.html" class="${k === active ? 'on' : ''}">${icon(i)}${l}</a>`).join('')}</nav>
-          <div class="side-foot"><button id="logout">${icon('log-out')}Log out</button></div>
+          <nav class="nav" aria-label="Main">${NAV[role].map(([k, l, i]) => `<a href="${k}.html" class="${k === active ? 'on' : ''}">${icon(i)}<span data-i18n="nav_${k}">${l}</span></a>`).join('')}</nav>
+          <div class="side-foot"><button id="logout">${icon('log-out')}<span data-i18n="logout">Log out</span></button></div>
         </aside>
         <div class="main">
           <header class="topbar">
             <button class="btn btn-ghost burger" id="burger" aria-label="Open menu" style="padding:6px;place-items:center">${icon('menu', 22)}</button>
             <span class="t">${esc(title)}</span><span class="grow"></span>
+            ${['novatech12@gmail.com', 'admin@novatech.test', 'shivampatil123@gmail.com', 'creator@test.dev'].includes((s.user.email || '').toLowerCase()) ? `<button type="button" class="btn btn-sm" id="switchDemoBtn" style="border:1px dashed #6366f1;color:#4f46e5;background:#EEF2FF;font-weight:600" data-i18n="${role === 'company' ? 'switch_to_creator' : 'switch_to_company'}">${role === 'company' ? 'Switch to Creator' : 'Switch to Company'}</button>` : ''}
+            ${root.BrandI18n ? root.BrandI18n.switcherHtml() : ''}
             <div class="bell"><button class="bell-btn" id="bellBtn" aria-label="Notifications">${icon('bell')}<span class="dot hide" id="bellDot">0</span></button>
               <div class="bell-panel" id="bellPanel"><header><span>Notifications</span><button class="btn btn-ghost btn-sm" id="markRead">Mark all read</button></header><div class="bell-list" id="bellList"></div></div></div>
             <div class="me"><div class="who"><b>${esc(s.user.name)}</b><span class="muted">${esc(s.user.email)}</span></div><div class="avatar">${esc(initials(s.user.name))}</div></div>
@@ -154,6 +185,16 @@
       </div><div class="toasts" id="toasts"></div>`;
     window.addEventListener('pageshow', e => { if (e.persisted && !API.session()) location.reload(); }); // block stale pages after logout via Back button
     document.getElementById('logout').onclick = async () => { await API.logout(); location.href = `${BASE}index.html`; };
+    const swBtn = document.getElementById('switchDemoBtn');
+    if (swBtn) {
+      swBtn.onclick = async () => {
+        const targetRole = role === 'company' ? 'creator' : 'company';
+        const targetEmail = targetRole === 'company' ? 'novatech12@gmail.com' : 'shivampatil123@gmail.com';
+        try { await API.login({ email: targetEmail, password: '12345678', role: targetRole, remember: true }); location.href = `${BASE}${targetRole}/dashboard.html`; }
+        catch (err) { toast(err.message, 'bad'); }
+      };
+    }
+    if (root.BrandI18n) root.BrandI18n.apply();
     document.getElementById('burger').onclick = () => document.body.classList.toggle('nav-open');
     document.getElementById('content').addEventListener('click', () => document.body.classList.remove('nav-open'));
     const panel = document.getElementById('bellPanel');
@@ -166,9 +207,9 @@
       dot.textContent = unread > 9 ? '9+' : unread; dot.classList.toggle('hide', !unread);
       document.getElementById('bellList').innerHTML = list.length ? list.slice(0, 12).map(n => `<a class="n ${n.read ? '' : 'unread'}" href="${n.link}">${esc(n.text)}<small>${fmtDate(n.at)}</small></a>`).join('') : '<div class="empty" style="padding:28px 16px">Nothing new yet.</div>';
     }
-    refreshBell(); window.addEventListener('storage', refreshBell); window.addEventListener('focus', refreshBell);
+    refreshBell(); window.addEventListener('storage', refreshBell); window.addEventListener('focus', refreshBell); if (root.BrandTrust) root.BrandTrust.onSync(() => refreshBell());
     return { content: document.getElementById('content'), user: s.user, company: s.company, refreshBell };
   }
 
-  root.UI = { groupedFindings, scoreCard, sevBadge, diffHtml, GROUPS, SEV, icon, esc, q, fmtDate, badge, statusLabel, toast, confirmBox, loading, empty, banner, highlight, findingCard, timeline, comments, flash, shell, STATUS, CAT, FSTAT, initials, BASE };
+  root.UI = { groupedFindings, scoreCard, scoreDeltaCard, sevBadge, diffHtml, GROUPS, SEV, icon, esc, q, fmtDate, badge, statusLabel, toast, confirmBox, loading, empty, banner, highlight, findingCard, timeline, comments, flash, shell, STATUS, CAT, FSTAT, initials, BASE };
 })(window);

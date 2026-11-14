@@ -340,7 +340,7 @@ input[type="password"]::-ms-clear {
 </div>
 <script src="js/checker.js"></script><script>if(!window.BrandCheck)document.write('<script src="checker.js"><\/script>');</script>
 <script src="js/api.js"></script><script>if(!window.API)document.write('<script src="api.js"><\/script>');</script>
-<script src="js/app.js"></script><script>if(!window.UI)document.write('<script src="app.js"><\/script>');</script>
+<script src="js/i18n.js"></script><script src="js/app.js"></script><script>if(!window.UI)document.write('<script src="app.js"><\/script>');</script>
 <script>
 (async () => {
   await API.ready;
@@ -504,5 +504,5 @@ input[type="password"]::-ms-clear {
   render();
 })();
 </script>
-</body>
+<script>if(window.BrandI18n){const box=document.querySelector(".auth-head,.card-head,.brand");if(box){const d=document.createElement("div");d.style.cssText="position:fixed;top:14px;right:18px;z-index:50";d.innerHTML=BrandI18n.switcherHtml();document.body.appendChild(d);}BrandI18n.apply();}</script></body>
 </html>

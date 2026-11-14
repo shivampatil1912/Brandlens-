@@ -20,14 +20,14 @@
 (function (root) {
   'use strict';
   const KEY = 'bl_db_v1', SKEY = 'bl_session_v1';
-  const wait = (ms = 160) => new Promise(r => setTimeout(r, ms));
+  const wait = (ms = 0) => ms ? new Promise(r => setTimeout(r, ms)) : Promise.resolve();
   const uid = p => p + Math.random().toString(36).slice(2, 9);
   const now = () => new Date().toISOString();
   const fail = m => { throw new Error(m); };
 
   const emptyDb = () => ({ users: [], companies: [], submissions: [], notifications: [] });
   function load() { try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && d.users) return d; } catch (e) {} return emptyDb(); }
-  function save(db) { localStorage.setItem(KEY, JSON.stringify(db)); }
+  function save(db) { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} if (root.BrandCloud) root.BrandCloud.syncSave(db); if (root.BrandTrust) root.BrandTrust.broadcast('db_updated', { at: Date.now() }); }
 
   async function hashPw(pw) {
     try {
@@ -55,7 +55,7 @@
   const notify = (db, toType, toId, text, link) => db.notifications.push({ id: uid('n'), toType, toId, text, link, at: now(), read: false });
   const latest = s => s.versions[s.versions.length - 1];
   const addEvent = (s, text) => { s.events.push({ at: now(), text }); s.updatedAt = now(); };
-  const knowledgeOf = co => Object.assign({ companyName: co.name, voice: co.voice }, co.knowledge);
+  const knowledgeOf = co => Object.assign({ companyName: co.name, voice: co.voice, brandColors: (co.knowledge && co.knowledge.brandColors) || ['#1E3A5F', '#0D9488', '#F8FAFC'], minContrast: (co.knowledge && co.knowledge.minContrast) || 4.5, brandLogo: (co.knowledge && co.knowledge.brandLogo) || '', brandAssets: (co.knowledge && co.knowledge.brandAssets) || [] }, co.knowledge);
   const accessOf = (co, u) => {
     if ((co.access || 'open') === 'open') return 'open';
     const e = (co.accessList || []).find(x => x.userId === u.id);
@@ -73,14 +73,22 @@
     return { profileDone, rulesDone: rules >= 1, ruleCount: rules, ready: profileDone && rules >= 1 };
   }
 
-  function runCheck(s, co) {
-    const v = latest(s);
-    v.findings = root.BrandCheck.analyse(v.text, knowledgeOf(co), { dismissedKeys: s.dismissed });
-    v.checkedAt = now(); s.checkMode = 'rules';
+  async function runCheck(s, co) {
+    const v = latest(s), k = knowledgeOf(co);
+    v.findings = root.BrandCheck.analyse(v.text, k, { dismissedKeys: s.dismissed });
+    if (s.image && root.BrandVision) {
+      const vis = await root.BrandVision.analyseImage(s.image, k, { altText: s.altText || '', channel: s.channel });
+      s.visionFindings = vis.findings;
+      s.visionMeta = vis.meta;
+    } else {
+      s.visionFindings = [];
+      s.visionMeta = null;
+    }
+    v.checkedAt = now(); s.checkMode = s.image ? 'rules+vision' : 'rules';
   }
-  function revise(db, s, co, text, note) {
+  async function revise(db, s, co, text, note) {
     s.versions.push({ no: latest(s).no + 1, text, at: now(), findings: null });
-    runCheck(s, co);
+    await runCheck(s, co);
     if (s.status === 'draft') s.status = 'ai_checked';
     addEvent(s, note + ' — version ' + latest(s).no + ', ' + latest(s).findings.length + ' finding(s).');
   }
@@ -140,11 +148,11 @@
       if (canWrite(out.access)) { // guidelines are visible only to creators who may write for this company
         const k = c.knowledge, strip = ({ id, ...r }) => r;
         out.voice = Object.assign({ personality: '', style: '' }, c.voice);
-        out.guidelines = { terms: k.terms.map(strip), claims: k.claims.map(strip), disclaimers: k.disclaimers.map(strip) };
+        out.guidelines = { terms: k.terms.map(strip), claims: k.claims.map(strip), disclaimers: k.disclaimers.map(strip), brandColors: k.brandColors || ['#1E3A5F', '#0D9488', '#F8FAFC'], minContrast: k.minContrast || 4.5, brandLogo: k.brandLogo || '', brandAssets: k.brandAssets || [] };
       }
       return out;
     },
-    async myCompany() { await wait(60); const db = load(); return myCo(db); },
+    async myCompany() {  const db = load(); return myCo(db); },
     async saveProfile({ name, industry, website, description }) {
       await wait(); const db = load(), co = myCo(db);
       name = (name || '').trim(); if (!name) fail('Company name is required.');
@@ -233,7 +241,7 @@
       if (u.role === 'company') { const cu = db.users.find(x => x.id === s.creatorId); out.creator = { name: s.creatorName, email: s.creatorEmail, since: cu && cu.createdAt, posts: db.submissions.filter(x => x.creatorId === s.creatorId && x.companyId === s.companyId && x.status !== 'draft').length }; }
       return out;
     },
-    async saveDraft({ id, companyId, title, channel, text }) {
+    async saveDraft({ id, companyId, title, channel, text, image, altText, piiMasked }) {
       await wait(); const db = load(), u = needUser(db, 'creator');
       title = (title || '').trim(); text = (text || '').trim();
       const tco = db.companies.find(c => c.id === companyId && c.setupComplete); if (!tco) fail('Choose a company.');
@@ -243,20 +251,40 @@
       let s;
       if (id) {
         s = ownSub(db, id, u); if (s.status !== 'draft') fail('Only drafts can be edited here.');
-        Object.assign(s, { companyId, title, channel }); latest(s).text = text; addEvent(s, 'Draft saved.');
+        Object.assign(s, { companyId, title, channel });
+        if (image !== undefined) s.image = image;
+        if (altText !== undefined) s.altText = altText;
+        if (piiMasked !== undefined) s.piiMasked = !!piiMasked;
+        latest(s).text = text; addEvent(s, 'Draft saved.');
       } else {
         s = { id: uid('s'), no: null, companyId, creatorId: u.id, creatorName: u.name, creatorEmail: u.email, title, channel, status: 'draft',
+          image: image || null, altText: altText || '', piiMasked: !!piiMasked, visionFindings: [], visionMeta: null,
           versions: [{ no: 1, text, at: now(), findings: null }], dismissed: [], comments: [], events: [], autoApproved: false, createdAt: now(), updatedAt: now() };
         addEvent(s, 'Draft created.'); db.submissions.push(s);
       }
       save(db); return withCo(db, s);
     },
+    async deleteDraft(id) {
+      await wait(150); const db = load(), u = needUser(db, 'creator'), s = ownSub(db, id, u);
+      if (!['draft', 'ai_checked'].includes(s.status)) fail('Submitted posts cannot be deleted because they are part of the company audit trail.');
+      db.submissions = db.submissions.filter(x => x.id !== id);
+      save(db); return { deleted: true };
+    },
+    async updateMedia(id, { image, altText, piiMasked }) {
+      const db = load(), u = needUser(db, 'creator'), s = ownSub(db, id, u);
+      if (!EDITABLE.includes(s.status)) fail('This submission can no longer be edited.');
+      if (image !== undefined) s.image = image;
+      if (altText !== undefined) s.altText = altText;
+      if (piiMasked !== undefined) s.piiMasked = !!piiMasked;
+      save(db); return withCo(db, s);
+    },
     async analyse(id) {
-      await wait(450); const db = load(), u = needUser(db, 'creator'), s = ownSub(db, id, u);
+      await wait(350); const db = load(), u = needUser(db, 'creator'), s = ownSub(db, id, u);
       if (!EDITABLE.includes(s.status)) fail('This submission can no longer be analysed.');
-      const co = db.companies.find(c => c.id === s.companyId); runCheck(s, co);
+      const co = db.companies.find(c => c.id === s.companyId); await runCheck(s, co);
       if (s.status === 'draft') s.status = 'ai_checked';
-      addEvent(s, 'Content checked against ' + co.name + '’s approved knowledge — ' + latest(s).findings.length + ' finding(s).');
+      const totalF = latest(s).findings.length + (s.visionFindings || []).length;
+      addEvent(s, 'Content checked against ' + co.name + '’s approved knowledge — ' + totalF + ' finding(s).');
       save(db); return withCo(db, s);
     },
     async saveEdit(id, text) {
@@ -264,21 +292,150 @@
       if (!EDITABLE.includes(s.status)) fail('This submission can no longer be edited.');
       text = (text || '').trim(); if (text.length < 10) fail('Content cannot be empty.');
       if (text === latest(s).text) return withCo(db, s);
-      revise(db, s, db.companies.find(c => c.id === s.companyId), text, 'Edited manually'); save(db); return withCo(db, s);
+      await revise(db, s, db.companies.find(c => c.id === s.companyId), text, 'Edited manually'); save(db); return withCo(db, s);
     },
     async applyFix(id, fid) {
       await wait(250); const db = load(), u = needUser(db, 'creator'), s = ownSub(db, id, u);
       if (!EDITABLE.includes(s.status)) fail('This submission can no longer be edited.');
+      const vf = (s.visionFindings || []).find(x => x.id === fid);
+      if (vf && vf.fix && vf.fix.type === 'alt_text') {
+        s.altText = vf.fix.text;
+        await runCheck(s, db.companies.find(c => c.id === s.companyId));
+        addEvent(s, 'Applied automated alt-text suggestion.');
+        save(db); return withCo(db, s);
+      }
       const f = (latest(s).findings || []).find(x => x.id === fid); if (!f || !f.fix) fail('This finding has no automatic fix.');
-      revise(db, s, db.companies.find(c => c.id === s.companyId), root.BrandCheck.applyFix(latest(s).text, f), 'Accepted suggestion for “' + (f.excerpt || f.category) + '”');
+      await revise(db, s, db.companies.find(c => c.id === s.companyId), root.BrandCheck.applyFix(latest(s).text, f), 'Accepted suggestion for “' + (f.excerpt || f.category) + '”');
+      save(db); return withCo(db, s);
+    },
+    async applyAllFixes(id) {
+      await wait(250); const db = load(), u = needUser(db, 'creator'), s = ownSub(db, id, u);
+      if (!EDITABLE.includes(s.status)) fail('This submission can no longer be edited.');
+      const co = db.companies.find(c => c.id === s.companyId);
+      let applied = 0;
+      const vf = (s.visionFindings || []).find(x => x.fix && x.fix.type === 'alt_text' && x.decision !== 'dismissed');
+      if (vf) { s.altText = vf.fix.text; applied++; }
+      let txt = latest(s).text;
+      // Apply text fixes iteratively (re-check after each so offsets never shift)
+      for (let guard = 0; guard < 15; guard++) {
+        const curFindings = root.BrandCheck.analyse(txt, knowledgeOf(co), { dismissedKeys: s.dismissed });
+        const fixable = curFindings.find(x => x.fix);
+        if (!fixable) break;
+        txt = root.BrandCheck.applyFix(txt, fixable);
+        applied++;
+      }
+      if (!applied) fail('No automatic fixes available.');
+      if (txt !== latest(s).text) {
+        await revise(db, s, co, txt, 'Applied ' + applied + ' automated fix(es)');
+      } else {
+        await runCheck(s, co);
+        addEvent(s, 'Applied ' + applied + ' automated fix(es).');
+      }
       save(db); return withCo(db, s);
     },
     async dismissFinding(id, fid) {
       await wait(150); const db = load(), u = needUser(db, 'creator'), s = ownSub(db, id, u);
       if (!EDITABLE.includes(s.status)) fail('This submission can no longer be edited.');
-      const f = (latest(s).findings || []).find(x => x.id === fid); if (!f) fail('Finding not found.');
-      f.decision = 'dismissed'; if (!s.dismissed.includes(f.key)) s.dismissed.push(f.key);
+      const f = (latest(s).findings || []).find(x => x.id === fid) || (s.visionFindings || []).find(x => x.id === fid);
+      if (!f) fail('Finding not found.');
+      f.decision = 'dismissed'; if (f.key && !s.dismissed.includes(f.key)) s.dismissed.push(f.key);
       addEvent(s, 'Dismissed finding: “' + (f.excerpt || f.category) + '”.'); save(db); return withCo(db, s);
+    },
+    async markFalseAlarm(id, fid, note) {
+      await wait(180); const db = load(), co = myCo(db), u = needUser(db, 'company');
+      const s = db.submissions.find(x => x.id === id && x.companyId === co.id) || fail('Submission not found.');
+      const f = (latest(s).findings || []).find(x => x.id === fid) || (s.visionFindings || []).find(x => x.id === fid);
+      if (!f) fail('Finding not found.');
+      f.decision = 'false_alarm'; f.falseAlarmBy = u.name; f.falseAlarmAt = now(); f.falseAlarmNote = (note || '').trim();
+      addEvent(s, 'Reviewer marked finding as false alarm: “' + (f.excerpt || f.rule) + '”.');
+      addActivity(co, 'Marked false alarm on Post #' + (s.no || '–') + ' (“' + (f.rule || f.category) + '”).', co.name);
+      save(db); return withCo(db, s);
+    },
+    async saveLogo(dataUrl) {
+       const db = load(), co = myCo(db);
+      if (!co.knowledge) co.knowledge = { facts: [], terms: [], claims: [], disclaimers: [] };
+      co.knowledge.brandLogo = dataUrl || '';
+      addActivity(co, dataUrl ? 'Updated official company logo for Vision verification.' : 'Removed official company logo.');
+      save(db); return co;
+    },
+    async addBrandAsset({ title, type, dataUrl }) {
+       const db = load(), co = myCo(db);
+      if (!co.knowledge) co.knowledge = { facts: [], terms: [], claims: [], disclaimers: [] };
+      co.knowledge.brandAssets = co.knowledge.brandAssets || [];
+      co.knowledge.brandAssets.push({ id: uid('ast'), title: (title || 'Brand Asset').trim(), type: type || 'offer', dataUrl, at: now() });
+      addActivity(co, 'Added visual brand asset: “' + (title || 'Brand Asset').trim() + '”.');
+      save(db); return co;
+    },
+    async removeBrandAsset(id) {
+       const db = load(), co = myCo(db);
+      if (!co.knowledge || !co.knowledge.brandAssets) return co;
+      co.knowledge.brandAssets = co.knowledge.brandAssets.filter(x => x.id !== id);
+      addActivity(co, 'Removed a visual brand asset.');
+      save(db); return co;
+    },
+    async saveVisionSettings({ brandColors, minContrast }) {
+      await wait(150); const db = load(), co = myCo(db);
+      if (!co.knowledge) co.knowledge = { facts: [], terms: [], claims: [], disclaimers: [] };
+      if (Array.isArray(brandColors) && brandColors.length) co.knowledge.brandColors = brandColors;
+      if (minContrast) co.knowledge.minContrast = Number(minContrast);
+      addActivity(co, 'Updated Brand Visual Palette & WCAG Contrast settings.');
+      save(db); return co;
+    },
+    async getInsights() {
+       const db = load(), co = myCo(db);
+      const subs = db.submissions.filter(s => s.companyId === co.id && s.status !== 'draft');
+      const channels = [...new Set(subs.map(s => s.channel))];
+      const categories = ['terminology', 'claim', 'grammar', 'disclaimer', 'tone', 'vision'];
+      const heatmap = {};
+      channels.forEach(ch => { heatmap[ch] = {}; categories.forEach(cat => { heatmap[ch][cat] = 0; }); });
+      const ruleMap = new Map();
+      let totalFindings = 0, falseAlarms = 0, dismissed = 0, scoreSum = 0, scoreCount = 0;
+      const turnarounds = [];
+      for (const s of subs) {
+        const v = latest(s), allF = (v.findings || []).concat(s.visionFindings || []);
+        if (v.findings && root.BrandCheck) {
+          scoreSum += root.BrandCheck.score(v.findings).value;
+          scoreCount++;
+        }
+        if (s.submittedAt && s.status !== 'pending_review') {
+          const mins = Math.max(1, Math.round((new Date(s.updatedAt) - new Date(s.submittedAt)) / 60000));
+          turnarounds.push(mins);
+        }
+        for (const f of allF) {
+          totalFindings++;
+          if (f.decision === 'false_alarm') falseAlarms++;
+          if (f.decision === 'dismissed') dismissed++;
+          const cat = categories.includes(f.category) ? f.category : 'claim';
+          if (!heatmap[s.channel]) heatmap[s.channel] = {};
+          heatmap[s.channel][cat] = (heatmap[s.channel][cat] || 0) + 1;
+          const rk = f.rule || f.category;
+          const rec = ruleMap.get(rk) || { rule: rk, category: cat, triggered: 0, dismissed: 0, falseAlarms: 0 };
+          rec.triggered++;
+          if (f.decision === 'dismissed') rec.dismissed++;
+          if (f.decision === 'false_alarm') rec.falseAlarms++;
+          ruleMap.set(rk, rec);
+        }
+      }
+      const ambiguityRules = Array.from(ruleMap.values()).map(r => {
+        const score = Math.round(((r.dismissed + r.falseAlarms * 1.5) / Math.max(1, r.triggered)) * 100);
+        return Object.assign(r, { ambiguityScore: Math.min(100, score) });
+      }).sort((a, b) => b.ambiguityScore - a.ambiguityScore || b.triggered - a.triggered);
+
+      const avgTurnaroundMins = turnarounds.length ? Math.round(turnarounds.reduce((a, b) => a + b, 0) / turnarounds.length) : 0;
+      return {
+        totalSubmissions: subs.length,
+        approvedCount: subs.filter(s => s.status === 'approved').length,
+        pendingCount: subs.filter(s => s.status === 'pending_review').length,
+        avgScore: scoreCount ? Math.round(scoreSum / scoreCount) : 100,
+        avgTurnaroundMins,
+        totalFindings,
+        falseAlarms,
+        dismissed,
+        falseAlarmRate: totalFindings ? Math.round((falseAlarms / totalFindings) * 100) : 0,
+        piiShieldCount: subs.filter(s => s.piiMasked).length,
+        visionCount: subs.filter(s => !!s.image).length,
+        channels, categories, heatmap, ambiguityRules
+      };
     },
     async submitForReview(id) {
       await wait(350); const db = load(), u = needUser(db, 'creator'), s = ownSub(db, id, u);
@@ -337,13 +494,40 @@
       db.notifications.forEach(n => { if ((n.toType === 'company' && n.toId === u.companyId) || (n.toType === 'user' && n.toId === u.id)) n.read = true; });
       save(db);
     },
-    async activity() { await wait(100); const db = load(), co = myCo(db); return co.activity.slice().reverse(); },
+    async activity() {  const db = load(), co = myCo(db); return co.activity.slice().reverse(); },
 
     /* ---------- demo & sample data helpers ---------- */
     seeded: true,
     async ensureSeeded(force = false) {
+      const existing = load();
+      const hasLocal = !force && existing.companies && existing.companies.some(c => (c.name === 'Nova Tech' || c.name === 'NovaTech') && c.setupComplete) && existing.users && existing.users.some(u => u.email === 'shivampatil123@gmail.com');
+      if (hasLocal) {
+        // Instant 0ms local render; sync cloud silently in background without blocking UI!
+        if (root.BrandCloud) {
+          root.BrandCloud.supabasePull().then(cloudDb => {
+            if (cloudDb && cloudDb.companies && cloudDb.companies.length) {
+              try { localStorage.setItem(KEY, JSON.stringify(cloudDb)); } catch (e) {}
+              root.BrandCloud.idbPut(cloudDb);
+            }
+          }).catch(() => {});
+        }
+        return;
+      }
+      if (!force && root.BrandCloud) {
+        const idbData = await root.BrandCloud.idbGet();
+        if (idbData && idbData.companies && idbData.companies.length) {
+          try { localStorage.setItem(KEY, JSON.stringify(idbData)); } catch (e) {}
+          return;
+        }
+        const cloudDb = await root.BrandCloud.supabasePull();
+        if (cloudDb && cloudDb.companies && cloudDb.companies.length) {
+          try { localStorage.setItem(KEY, JSON.stringify(cloudDb)); } catch (e) {}
+          await root.BrandCloud.idbPut(cloudDb);
+          return;
+        }
+      }
       const db = load();
-      const hasNova = db.companies.some(c => c.name === 'Nova Tech' || c.name === 'NovaTech');
+      const hasNova = db.companies.some(c => (c.name === 'Nova Tech' || c.name === 'NovaTech') && c.setupComplete);
       const hasCreator = db.users.some(u => u.email === 'shivampatil123@gmail.com');
       const hasSubmissions = (db.submissions || []).some(s => s.id === 's_post_1') && (db.submissions || []).some(s => s.id === 's_post_3');
       if (!force && hasNova && hasCreator && hasSubmissions) return;
@@ -382,10 +566,11 @@
       // Company profile & brand rules
       let co = db.companies.find(c => c.name === 'Nova Tech' || c.name === 'NovaTech');
       if (!co) {
+        const novaId = db.companies.some(c => c.id === 'c_novatech') ? 'c_novatech_demo' : 'c_novatech';
         co = {
-          id: 'c_novatech', name: 'Nova Tech', ownerId: cu.id, industry: 'Consumer Electronics', website: 'https://novatech.example',
+          id: novaId, name: 'Nova Tech', ownerId: cu.id, industry: 'Consumer Electronics', website: 'https://novatech.example',
           description: 'NovaTech designs affordable smartphones and accessories for everyday users in India. We combine premium build quality with accessible pricing and dependable customer support.',
-          setupComplete: true, autoApprove: false, postCounter: 4, access: 'open',
+          setupComplete: true, autoApprove: false, postCounter: 3, access: 'open',
           accessList: [{ userId: cr.id, name: cr.name, email: cr.email, requestedAt: '2026-11-01T09:00:00Z', status: 'approved', decidedAt: '2026-11-01T09:30:00Z' }],
           voice: {
             tone: 'Professional & Accessible', personality: 'Helpful, transparent and grounded', style: 'Short sentences, active voice',
@@ -412,7 +597,14 @@
             ],
             disclaimers: [
               { id: 'k_d1', text: '*Terms and conditions apply. Warranty valid with official invoice.', trigger: 'warranty, offer, discount, sale, launch', severity: 'high' }
-            ]
+            ],
+            brandColors: ['#1E3A5F', '#0D9488', '#F8FAFC'],
+            minContrast: 4.5,
+            brandLogo: (root.BrandVision && root.BrandVision.generateSampleLogo) ? root.BrandVision.generateSampleLogo('Nova Tech') : '',
+            brandAssets: (root.BrandVision && root.BrandVision.generateBrandAsset) ? [
+              { id: 'ast_1', title: 'NovaTech X1 Official Product Card', type: 'product', dataUrl: root.BrandVision.generateBrandAsset('NovaTech X1 Smartphone', '₹24,999 · 2-Year Warranty', '#1E3A5F', '#0D9488'), at: '2026-11-01T08:40:00Z' },
+              { id: 'ast_2', title: 'Eco-Friendly Packaging Badge', type: 'offer', dataUrl: root.BrandVision.generateBrandAsset('100% Recyclable Box', 'Sustainable Tech by NovaTech', '#0F172A', '#0D9488'), at: '2026-11-01T08:45:00Z' }
+            ] : []
           },
           activity: [
             { id: 'a_1', at: '2026-11-01T08:00:00Z', text: 'Company workspace registered for Nova Tech.', by: 'Nova Tech' },
@@ -420,7 +612,8 @@
             { id: 'a_3', at: '2026-11-01T09:30:00Z', text: 'Creator access approved for Shivam Patil.', by: 'Nova Tech' },
             { id: 'a_4', at: '2026-11-08T11:15:00Z', text: 'Post #1 “NovaTech X1 Official Launch Announcement” approved.', by: 'Nova Tech' },
             { id: 'a_5', at: '2026-11-08T15:00:00Z', text: 'Post #2 “Eco-Friendly Packaging Spotlight” approved.', by: 'Nova Tech' },
-            { id: 'a_6', at: '2026-11-09T09:00:00Z', text: 'Post #4 “Weekend Flash Sale Preview” submitted by Shivam Patil.', by: 'Shivam Patil' }
+            { id: 'a_6', at: '2026-11-09T09:00:00Z', text: 'Post #3 “Weekend Flash Sale Preview” submitted by Shivam Patil.', by: 'Shivam Patil' },
+            { id: 'a_7', at: '2026-11-09T11:05:00Z', text: 'Marked false alarm on Post #1 (“Disclaimer · warranty review”).', by: 'Nova Tech' }
           ],
           createdAt: '2026-11-01T08:00:00Z'
         };
@@ -432,8 +625,9 @@
       const s3Text = "Our brand offers the most cheapest smartphones in India. Everyone can get premium quality at the lowest price guaranteed!";
       const kCo = knowledgeOf(co);
       const s3Findings = (root.BrandCheck ? root.BrandCheck.analyse(s3Text, kCo) : []);
+      if (s3Findings.length > 1) { s3Findings[0].decision = 'false_alarm'; s3Findings[0].falseAlarmBy = 'Nova Tech'; }
 
-      db.submissions = [
+      const seededSubs = [
         {
           id: 's_post_1', no: 1, companyId: co.id, creatorId: cr.id, creatorName: cr.name, creatorEmail: cr.email,
           title: 'NovaTech X1 Official Launch Announcement', channel: 'Instagram Post', status: 'approved',
@@ -467,8 +661,16 @@
           autoApproved: false, submittedAt: '2026-11-08T14:30:00Z', createdAt: '2026-11-08T14:00:00Z', updatedAt: '2026-11-08T15:00:00Z'
         },
         {
-          id: 's_post_3', no: 3, companyId: co.id, creatorId: cr.id, creatorName: cr.name, creatorEmail: cr.email,
+          id: 's_post_3', no: null, companyId: co.id, creatorId: cr.id, creatorName: cr.name, creatorEmail: cr.email,
           title: 'Festive Season Promotional Launch', channel: 'Instagram Post', status: 'ai_checked',
+          image: (root.BrandVision && root.BrandVision.generateSampleBanner) ? root.BrandVision.generateSampleBanner() : null,
+          altText: '',
+          visionFindings: [
+            { id: 'vis_s3_1', category: 'vision', group: 'violation', severity: 'high', status: 'confirmed_mismatch', excerpt: 'Primary image color #F04070 (ΔE=58)', start: -1, end: -1, reason: 'Dominant banner color drifts from Nova Tech’s approved palette (#1E3A5F, #0D9488, #F8FAFC).', rule: 'Visual Brand Identity · Palette Compliance (CIELAB ΔE ≤ 32)', evidence: 'Canvas pixel clustering detected off-brand pink/magenta.', suggestion: 'Use Nova Tech’s approved #1E3A5F / #0D9488 palette.', fix: null, decision: null },
+            { id: 'vis_s3_2', category: 'vision', group: 'violation', severity: 'critical', status: 'confirmed_mismatch', excerpt: 'Measured contrast ratio 2.45:1 (WCAG AA requires ≥ 4.5:1)', start: -1, end: -1, reason: 'Yellow text over bright pink background fails WCAG 2.1 AA readability.', rule: 'Accessibility · WCAG 2.1 AA Text-over-Image Contrast (≥ 4.5:1)', evidence: 'Luminance contrast is 2.45:1.', suggestion: 'Use high-contrast #FFFFFF text on #1E3A5F dark navy.', fix: null, decision: null },
+            { id: 'vis_s3_3', category: 'vision', group: 'violation', severity: 'medium', status: 'confirmed_mismatch', excerpt: 'Missing image alt-text for screen readers', start: -1, end: -1, reason: 'Image attachments for Nova Tech require descriptive alt-text.', rule: 'Accessibility · Mandatory Screen-Reader Alt-Text', evidence: 'Alt-text field is empty.', suggestion: 'Apply suggested alt-text for screen readers.', fix: { type: 'alt_text', text: 'Nova Tech Instagram Post promotional graphic featuring NovaTech X1 launch offer.' }, decision: null }
+          ],
+          visionMeta: { width: 800, height: 420, aspectLabel: '1.91:1 Ad Banner', dominantColors: [{ hex: '#F04070', share: 72, deltaE: 58 }, { hex: '#FDE047', share: 14, deltaE: 64 }], approvedColors: ['#1E3A5F', '#0D9488', '#F8FAFC'], contrastRatio: 2.45, minContrast: 4.5, clearSpaceOk: false, logoChecked: true, logoVerified: false, logoConfidence: 12 },
           versions: [{
             no: 1,
             text: s3Text,
@@ -483,8 +685,11 @@
           autoApproved: false, submittedAt: null, createdAt: '2026-11-09T11:00:00Z', updatedAt: '2026-11-09T11:02:00Z'
         },
         {
-          id: 's_post_4', no: 4, companyId: co.id, creatorId: cr.id, creatorName: cr.name, creatorEmail: cr.email,
+          id: 's_post_4', no: 3, companyId: co.id, creatorId: cr.id, creatorName: cr.name, creatorEmail: cr.email,
           title: 'Weekend Flash Sale Preview', channel: 'Advertisement', status: 'pending_review',
+          image: (root.BrandVision && root.BrandVision.generateBrandAsset) ? root.BrandVision.generateBrandAsset('Weekend Flash Sale', 'NovaTech X1 · ₹24,999', '#1E3A5F', '#0D9488') : null,
+          altText: 'NovaTech X1 Weekend Flash Sale promotional banner featuring 2-year warranty.',
+          visionMeta: { width: 640, height: 360, aspectLabel: '16:9 Landscape', dominantColors: [{ hex: '#1E3A5F', share: 78, deltaE: 2 }, { hex: '#0D9488', share: 16, deltaE: 3 }], approvedColors: ['#1E3A5F', '#0D9488', '#F8FAFC'], contrastRatio: 9.8, minContrast: 4.5, clearSpaceOk: true, logoChecked: true, logoVerified: true, logoConfidence: 92 },
           versions: [{
             no: 1,
             text: "Upgrade your smartphone this weekend with NovaTech X1! Get unmatched power and reliability at ₹24,999 with our 2-year manufacturer warranty.\n\n*Terms and conditions apply. Warranty valid with official invoice.",
@@ -495,28 +700,40 @@
           events: [
             { at: '2026-11-09T09:00:00Z', text: 'Submitted to Nova Tech for review.' }
           ],
+          visionFindings: [{ id: 'vis_seed_1', category: 'vision', group: 'violation', severity: 'medium', status: 'confirmed_mismatch', excerpt: 'Missing image alt-text for screen readers', start: -1, end: -1, reason: 'Promotional banner requires descriptive alt-text.', rule: 'Accessibility · Mandatory Screen-Reader Alt-Text', evidence: 'Alt-text field is empty.', suggestion: 'Add descriptive alt-text.', fix: null, decision: 'dismissed' }],
           autoApproved: false, submittedAt: '2026-11-09T09:00:00Z', createdAt: '2026-11-09T08:30:00Z', updatedAt: '2026-11-09T09:00:00Z'
         }
       ];
 
+      if (force || !db.submissions || db.submissions.length === 0) {
+        db.submissions = seededSubs;
+      } else {
+        seededSubs.forEach(ss => { if (!db.submissions.some(x => x.id === ss.id)) db.submissions.push(ss); });
+      }
+
       // Seed notifications
-      db.notifications = [
-        { id: 'n_1', toType: 'company', toId: co.id, text: 'Post #4 “Weekend Flash Sale Preview” submitted by Shivam Patil (shivampatil123@gmail.com).', link: 'review.html?id=s_post_4', at: '2026-11-09T09:00:00Z', read: false },
+      const seededNotifs = [
+        { id: 'n_1', toType: 'company', toId: co.id, text: 'Post #3 “Weekend Flash Sale Preview” submitted by Shivam Patil (shivampatil123@gmail.com).', link: 'review.html?id=s_post_4', at: '2026-11-09T09:00:00Z', read: false },
         { id: 'n_2', toType: 'company', toId: co.id, text: 'Post #2 “Eco-Friendly Packaging Spotlight” was approved.', link: 'review.html?id=s_post_2', at: '2026-11-08T15:00:00Z', read: true },
         { id: 'n_3', toType: 'company', toId: co.id, text: 'Post #1 “NovaTech X1 Official Launch Announcement” was approved.', link: 'review.html?id=s_post_1', at: '2026-11-08T11:15:00Z', read: true },
-        { id: 'n_4', toType: 'user', toId: cr.id, text: 'Your post #4 “Weekend Flash Sale Preview” was submitted to Nova Tech for review.', link: 'report.html?id=s_post_4', at: '2026-11-09T09:00:00Z', read: false },
+        { id: 'n_4', toType: 'user', toId: cr.id, text: 'Your post #3 “Weekend Flash Sale Preview” was submitted to Nova Tech for review.', link: 'report.html?id=s_post_4', at: '2026-11-09T09:00:00Z', read: false },
         { id: 'n_5', toType: 'user', toId: cr.id, text: 'Your post #2 “Eco-Friendly Packaging Spotlight” was approved by Nova Tech.', link: 'report.html?id=s_post_2', at: '2026-11-08T15:00:00Z', read: true },
         { id: 'n_6', toType: 'user', toId: cr.id, text: 'Your post #1 “NovaTech X1 Official Launch Announcement” was approved by Nova Tech.', link: 'report.html?id=s_post_1', at: '2026-11-08T11:15:00Z', read: true }
       ];
+      if (force || !db.notifications || db.notifications.length === 0) {
+        db.notifications = seededNotifs;
+      } else {
+        seededNotifs.forEach(sn => { if (!db.notifications.some(x => x.id === sn.id)) db.notifications.push(sn); });
+      }
 
       save(db);
     },
-    _reset() { localStorage.removeItem(KEY); localStorage.removeItem(SKEY); sessionStorage.removeItem(SKEY); }
+    async _reset() { localStorage.removeItem(KEY); localStorage.removeItem(SKEY); sessionStorage.removeItem(SKEY); if (root.BrandCloud && root.BrandCloud.idbClear) await root.BrandCloud.idbClear(); }
   };
 
   const qs = root.location ? root.location.search : '';
-  if (/[?&]reset=1/.test(qs)) API._reset();
-  API.ready = API.ensureSeeded(/[?&]seed=1/.test(qs));
+  const isReset = /[?&]reset=1/.test(qs);
+  API.ready = (async () => { if (isReset) await API._reset(); await API.ensureSeeded(isReset || /[?&]seed=1/.test(qs)); })();
   root.API = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -327,7 +327,7 @@ input[type="password"]::-ms-clear {
 <link rel="stylesheet" href="../css/style.css">
 <link rel="stylesheet" href="../style.css"></head>
 <body><div id="app"></div>
-<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script src="../js/checker.js"></script><script src="../js/cloud.js"></script><script src="../js/api.js"></script><script src="../js/i18n.js"></script><script src="../js/app.js"></script>
 <script>
 (async () => {
   await API.ready;
@@ -374,7 +374,14 @@ ${demoBannerHtml}
             : UI.empty('file-text', 'No submissions yet', 'Pick a company and write your first post. BrandLens checks it before you submit.', '<a class="btn btn-primary" href="companies.html">Find a company</a>')}
         </section>
         <section class="card"><div class="card-head"><h2>Updates</h2></div><div class="card-body">
-          ${notes.length ? notes.slice(0, 6).map(x => `<a class="notif" href="${x.link}"><div class="ico">${UI.icon('bell', 16)}</div><div>${UI.esc(x.text)}<small>${UI.fmtDate(x.at)}</small></div></a>`).join('') : '<p class="muted">Decisions from companies will show up here.</p>'}
+          ${notes.length ? `<div class="stack" style="gap:8px">${notes.slice(0, 6).map(x => {
+            const t = String(x.text || '').toLowerCase();
+            const m = t.includes('approved') ? ['Approved', 'b-ok', 'check-circle']
+              : (t.includes('rejected') || t.includes('changes')) ? ['Action Needed', 'b-warn', 'alert']
+              : t.includes('submitted') ? ['Submitted', 'b-info', 'send']
+              : ['Update', 'b-muted', 'bell'];
+            return `<a class="notif" href="${x.link}" style="padding:10px;border:1px solid var(--line);border-radius:var(--r-m);background:#FAFBFC"><div class="ico" style="background:#F1F5F9;color:var(--brand)">${UI.icon(m[2], 15)}</div><div class="grow"><div style="margin-bottom:2px"><span class="badge ${m[1]}" style="font-size:.68rem;padding:1px 7px;margin-right:6px">${m[0]}</span><span class="small" style="font-weight:600;color:var(--text)">${UI.esc(x.text)}</span></div><small>${UI.fmtDate(x.at)}</small></div></a>`;
+          }).join('')}</div>` : '<p class="muted">Decisions from companies will show up here.</p>'}
         </div></section>
       </div>`;
   } catch (e) { el.innerHTML = UI.empty('alert', 'Could not load the dashboard', e.message, '<button class="btn" onclick="location.reload()">Retry</button>'); }

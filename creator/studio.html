@@ -327,7 +327,7 @@ input[type="password"]::-ms-clear {
 <link rel="stylesheet" href="../css/style.css">
 <link rel="stylesheet" href="../style.css"></head>
 <body><div id="app"></div>
-<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script src="../js/checker.js"></script><script src="../js/vision.js"></script><script src="../js/trust.js"></script><script src="../js/cloud.js"></script><script src="../js/api.js"></script><script src="../js/i18n.js"></script><script src="../js/app.js"></script>
 <script>
 (async () => {
   await API.ready;
@@ -335,7 +335,7 @@ input[type="password"]::-ms-clear {
   const el = ctx.content, esc = UI.esc; el.innerHTML = UI.loading();
   const CHANNELS = ['Instagram Post', 'LinkedIn Post', 'Advertisement', 'Facebook Post', 'X Post', 'Blog', 'Marketing Email', 'Product Description', 'Other'];
   const EDITABLE = ['draft', 'ai_checked', 'changes_requested'];
-  let sub = null, busy = false, savedText = '', saveTimer = null, lastSaved = null;
+  let sub = null, busy = false, savedText = '', saveTimer = null, lastSaved = null, curImage = null, showPreview = false;
   const $ = id => document.getElementById(id);
 
   try {
@@ -353,19 +353,23 @@ input[type="password"]::-ms-clear {
     if (!companies.length && !sub) {
       el.innerHTML = `<div class="page-head"><div><h1>Content Studio</h1></div></div><section class="card">${UI.empty('building', 'No company to write for yet', all.length ? 'Request access to a company, or wait for approval, then come back.' : 'Companies appear once they register and complete their brand setup.', '<a class="btn btn-primary" href="companies.html">Find companies</a>')}</section>`; return;
     }
+    if (sub && sub.image) curImage = sub.image;
     const pre = (sub && sub.companyId) || UI.q('company') || (companies.length ? companies[0].id : '');
     const latest = () => sub.versions[sub.versions.length - 1];
     const locked = () => sub && sub.status !== 'draft';
 
-    el.innerHTML = `<div class="page-head"><div><h1>Content Studio</h1><p>Write your content, check it against the company’s rules, fix the issues, then submit it for approval.</p></div><div id="statusBadge"></div></div>
+    el.innerHTML = `<div class="page-head"><div><h1>Content Studio</h1><p>Write your content, check it against the company’s rules, fix the issues, then submit it for approval.</p></div><div class="row" style="gap:10px;align-items:center"><button type="button" class="btn btn-sm" id="delDraftBtn" style="display:none;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;font-weight:600">${UI.icon("trash", 14)} Delete</button><div id="statusBadge"></div></div></div>
       <div id="notice"></div>
       <div class="grid-2">
         <div class="stack">
           <div class="row between" style="margin-bottom:12px;background:#F8FAFC;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r-m)">
             <span class="muted small"><b>Hackathon Judge Demo:</b> Test compliance check with pre-built sample content:</span>
-            <button type="button" class="btn btn-sm" id="loadSampleBtn" style="border:1px dashed #6366f1;color:#4f46e5;background:#EEF2FF;font-weight:600">
-              ${UI.icon('sparkles', 15)} Load Sample Test Post
-            </button>
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn btn-sm" id="previewBtn">${UI.icon("eye", 14)} Live Preview</button><label class="btn btn-sm" style="margin:0;cursor:pointer">${UI.icon('file-text', 14)} Import .txt/.md<input type="file" id="importDoc" accept=".txt,.md,text/plain,text/markdown" style="display:none"></label>
+              <button type="button" class="btn btn-sm" id="loadSampleBtn" style="border:1px dashed #6366f1;color:#4f46e5;background:#EEF2FF;font-weight:600">
+                ${UI.icon('sparkles', 15)} Load Sample Test Post
+              </button>
+            </div>
           </div>
           <form class="card card-pad" id="f" novalidate>
             <div class="row" style="align-items:flex-start;gap:16px">
@@ -373,12 +377,43 @@ input[type="password"]::-ms-clear {
               <div class="field" style="min-width:190px"><label for="ch">Content type</label><select class="select" id="ch">${CHANNELS.map(c => `<option ${sub && sub.channel === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
             </div>
             <div class="field"><label for="title">Content title</label><input class="input" id="title" maxlength="120" placeholder="e.g. X1 launch post" value="${esc(sub ? sub.title : '')}"><span class="err" id="e-title"></span></div>
-            <div class="field"><label for="text">Your content</label><textarea class="textarea" id="text" style="min-height:240px" placeholder="Write or paste the caption, description or message you want to publish.">${esc(sub ? latest().text : '')}</textarea><span class="err" id="e-text"></span></div>
+            <div class="field"><label for="text">Your content</label><textarea class="textarea" id="text" style="min-height:210px" placeholder="Write or paste the caption, description or message you want to publish.">${esc(sub ? latest().text : '')}</textarea><span class="err" id="e-text"></span></div>
+            <div id="piiBar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;margin:-4px 0 12px;background:#F8FAFC;border:1px solid var(--line);border-radius:var(--r-m);flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:8px;font-size:.82rem">
+                ${UI.icon('shield', 15)}
+                <span id="piiStatus" class="muted">PII Shield: No sensitive data detected</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <label style="display:flex;align-items:center;gap:5px;font-size:.78rem;cursor:pointer;margin:0"><input type="checkbox" id="piiAuto" ${sub && sub.piiMasked ? 'checked' : ''}> Auto-mask on check</label>
+                <button type="button" class="btn btn-sm" id="maskPiiBtn" style="display:none">Mask PII now</button>
+              </div>
+            </div>
+            <div class="field" style="padding:12px;border:1px dashed var(--line);border-radius:var(--r-m);background:#FAFBFC">
+              <div class="row between" style="margin-bottom:8px;flex-wrap:wrap;gap:8px">
+                <label style="margin:0;display:flex;align-items:center;gap:6px">${UI.icon('image', 15)} Visual Asset &amp; Accessibility Scanner <span class="badge b-muted">Optional</span></label>
+                <div class="row" style="gap:6px">
+                  <button type="button" class="btn btn-sm" id="coAssetBtn">${UI.icon('building', 14)} Use Company Asset</button>
+                  <button type="button" class="btn btn-sm" id="sampleBannerBtn" style="border:1px dashed #0d9488;color:#0f766e;background:#F0FDFA">${UI.icon('sparkles', 14)} Sample Ad Banner</button>
+                  <label class="btn btn-sm" style="margin:0;cursor:pointer">Upload Image<input type="file" id="imgFile" accept="image/png,image/jpeg,image/webp" style="display:none"></label>
+                  <button type="button" class="btn btn-ghost btn-sm" id="clearImgBtn" style="display:none">Remove</button>
+                </div>
+              </div>
+              <div id="imgPreviewWrap" style="display:none;margin-top:10px">
+                <div class="row" style="align-items:flex-start;gap:12px;flex-wrap:wrap">
+                  <img id="imgPreview" alt="Uploaded asset preview" style="max-width:180px;max-height:110px;border-radius:8px;border:1px solid var(--line);object-fit:cover">
+                  <div class="grow" style="min-width:200px">
+                    <label for="altText" style="font-size:.78rem;margin-bottom:4px">Image Alt-Text (WCAG Accessibility)</label>
+                    <input class="input" id="altText" maxlength="200" placeholder="Describe the image for screen readers…" value="${esc(sub && sub.altText ? sub.altText : '')}">
+                    <div id="visionSummary" class="muted small" style="margin-top:6px"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="row between"><span class="muted small"><span id="count">0</span> characters · <span class="saved" id="saved"></span></span>
               <div class="row"><button type="button" class="btn" id="save">Save draft</button><button type="submit" class="btn btn-accent" id="check">${UI.icon('sparkles', 16)}Check content</button><button type="button" class="btn btn-primary" id="submit">${UI.icon('send', 16)}Submit for approval</button></div></div>
             <p class="hint" id="submitHint" style="margin-top:8px;text-align:right"></p>
           </form>
-          <div id="hlCard"></div>
+          <div id="coAssetPicker" style="display:none;margin-bottom:12px"></div><div id="previewCard"></div><div id="hlCard"></div>
         </div>
         <div class="stack" id="side"></div>
       </div>`;
@@ -392,11 +427,46 @@ input[type="password"]::-ms-clear {
     }
     function quiet() { return $('co').value && $('title').value.trim() && text().trim().length >= 10; }
 
+    function refreshPiiAndMedia() {
+      const pii = BrandTrust.scanPII(text());
+      const ps = $('piiStatus'), pb = $('maskPiiBtn');
+      if (ps && pb) {
+        if (pii.hasPII) {
+          ps.innerHTML = `<b style="color:#B45309">${pii.count} sensitive item(s) detected</b> (${[...new Set(pii.items.map(i => i.label))].join(', ')})`;
+          pb.style.display = 'inline-flex';
+        } else {
+          ps.textContent = (sub && sub.piiMasked) ? 'PII Shield: Sensitive data redacted before check' : 'PII Shield: No sensitive data detected';
+          pb.style.display = 'none';
+        }
+      }
+      const wrap = $('imgPreviewWrap'), clr = $('clearImgBtn'), prev = $('imgPreview'), vs = $('visionSummary');
+      if (wrap && clr && prev) {
+        if (curImage) {
+          wrap.style.display = 'block'; clr.style.display = 'inline-flex'; prev.src = curImage;
+          if (sub && sub.visionMeta && vs) {
+            const m = sub.visionMeta;
+            const swatches = m.dominantColors.slice(0, 3).map(dc => `<span title="${dc.hex} (ΔE ${dc.deltaE})" style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${dc.hex};border:1px solid #cbd5e1;vertical-align:middle;margin-right:3px"></span>`).join('');
+            const logoTag = m.logoChecked ? (m.logoVerified ? ' · <span style="color:#14703A;font-weight:600">✓ Official Logo Verified</span>' : ' · <span style="color:#B45309;font-weight:600">⚠ Official Logo Missing</span>') : '';
+            vs.innerHTML = `${swatches} <span>Contrast: <b>${m.contrastRatio}:1</b> (min ${m.minContrast}:1)</span> · <span>${esc(m.aspectLabel)}</span>${logoTag}`;
+          } else if (vs) {
+            vs.textContent = 'Ready — click "Check content" to run CIELAB palette & WCAG contrast scan.';
+          }
+        } else {
+          wrap.style.display = 'none'; clr.style.display = 'none';
+        }
+      }
+    }
+
     function paint() {
-      const checked = sub && latest().findings !== null, f = checked ? latest().findings : [], c = BrandCheck.counts(f), d = dirty();
+      refreshPiiAndMedia();
+      const checked = sub && latest().findings !== null;
+      const vf = (checked && sub.visionFindings) ? sub.visionFindings : [];
+      const f = checked ? latest().findings.concat(vf) : [], c = BrandCheck.counts(f), d = dirty();
       $('statusBadge').innerHTML = sub ? UI.badge(sub.status) : '<span class="badge b-muted">New</span>';
       $('count').textContent = text().length;
       $('save').classList.toggle('hide', !!locked());
+      const canDel = sub && ['draft', 'ai_checked'].includes(sub.status);
+      if ($('delDraftBtn')) $('delDraftBtn').style.display = canDel ? 'inline-flex' : 'none';
       $('co').disabled = !!locked(); $('title').disabled = !!locked(); $('ch').disabled = !!locked();
       $('check').innerHTML = (checked ? UI.icon('sparkles', 16) + 'Check again' : UI.icon('sparkles', 16) + 'Check content');
       const can = checked && !d && !busy; $('submit').disabled = !can;
@@ -404,15 +474,46 @@ input[type="password"]::-ms-clear {
       $('submitHint').textContent = !checked ? 'Check your content first. Submitting is a separate step.' : d ? 'You changed the text. Check it again before submitting.' : '';
       const lastCo = sub && sub.comments.slice().reverse().find(x => x.role === 'company');
       $('notice').innerHTML = sub && sub.status === 'changes_requested' ? UI.banner('warn', sub.companyName + ' asked for changes', lastCo ? ' “' + lastCo.text + '” Revise the content, check it again, then resubmit.' : ' Revise the content, check it again, then resubmit.') : '';
+
+    function buildChannelPreview(ch, coName, author, text, img, alt, logoUrl) {
+      const creatorName = author || 'Content Creator';
+      const avatar = `<div class="avatar" style="width:36px;height:36px;font-size:13px">${esc(UI.initials(creatorName))}</div>`;
+      const isAd = /ad/i.test(ch), isLi = /linkedin/i.test(ch), isX = /^x /i.test(ch);
+      const footer = isAd
+        ? `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#F8FAFC;border-top:1px solid var(--line)"><span class="small muted">Sponsored · ${esc(coName)}</span><span class="btn btn-primary btn-sm" style="pointer-events:none;font-size:.78rem">Learn More →</span></div>`
+        : isLi
+        ? `<div style="display:flex;justify-content:space-around;padding:8px 14px;border-top:1px solid #f1f5f9;color:#64748b;font-size:.8rem;font-weight:600"><span>👍 Like</span><span>💬 Comment</span><span>🔁 Repost</span><span>➤ Send</span></div>`
+        : isX
+        ? `<div style="display:flex;justify-content:space-between;padding:8px 16px;border-top:1px solid #f1f5f9;color:#64748b;font-size:.8rem"><span>💬 12</span><span>🔁 8</span><span>❤️ 64</span><span>📊 1.2K</span></div>`
+        : `<div style="display:flex;justify-content:space-between;padding:9px 14px;border-top:1px solid #f1f5f9;font-size:.85rem;color:#334155"><span>♡ &nbsp; 💬 &nbsp; ➤</span><span>🔖</span></div>`;
+      return `<div style="max-width:440px;margin:0 auto;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 4px 18px rgba(15,23,42,.06)">
+        <div class="row" style="padding:11px 14px;gap:10px;border-bottom:1px solid #f1f5f9">${avatar}<div class="grow"><div style="display:flex;align-items:center;gap:5px"><b style="font-size:.9rem">${esc(creatorName)}</b><span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#0ea5e9;color:#fff;font-size:10px;font-weight:700">✓</span></div><div class="muted small" style="font-size:.74rem">${esc(ch)} · for <b>${esc(coName)}</b></div></div><span class="muted" style="font-weight:700">···</span></div>
+        ${img ? `<div style="background:#0f172a;display:flex;justify-content:center"><img src="${img}" alt="${esc(alt || '')}" style="width:100%;max-height:280px;object-fit:contain;display:block"></div>` : ''}
+        <div style="padding:12px 14px;font-size:.9rem;white-space:pre-wrap;line-height:1.5;color:#0f172a">${esc(text || 'Your post copy will appear here…')}</div>
+        ${alt ? `<div style="padding:5px 14px 8px;font-size:.74rem;color:#64748b">ALT: ${esc(alt)}</div>` : ''}
+        ${footer}
+      </div>`;
+    }
+      const pv = $('previewCard');
+      if (pv) {
+        if (showPreview) {
+          const coName = $('co').selectedOptions[0] ? $('co').selectedOptions[0].text : 'Company';
+          const altVal = $('altText') ? $('altText').value : '';
+          pv.innerHTML = `<section class="card" style="margin-bottom:14px"><div class="card-head"><h2>Live ${esc($('ch').value)} Preview</h2><button type="button" class="btn btn-ghost btn-sm" id="closePreviewBtn">Close</button></div>
+            <div class="card-body" style="background:#F8FAFC">${buildChannelPreview($('ch').value, coName, ctx.user.name, text(), curImage, altVal, '')}</div></section>`;
+        } else { pv.innerHTML = ''; }
+      }
       $('hlCard').innerHTML = checked && !d ? `<section class="card"><div class="card-head"><h2>Highlighted issues</h2><span class="muted small">Click a highlight to jump to its finding</span></div><div class="card-body"><div class="draft">${UI.highlight(latest().text, f)}</div></div></section>` : '';
       $('side').innerHTML = !checked ? `<section class="card card-pad"><h2 style="margin-bottom:6px">Brand check</h2><p class="muted small">Press <b>Check content</b> to compare your text with the company’s rules and approved facts. You will see each issue, the rule behind it and a suggested fix.</p></section>`
         : `<section class="card card-pad"><div class="row between" style="margin-bottom:10px"><h2>Compliance score</h2><span class="badge b-muted">Rule-based check</span></div>${d ? '<p class="muted small" style="margin-bottom:10px">Showing the last checked version. Check again to update it.</p>' : ''}${UI.scoreCard(f)}</section>
-          <section><h2 style="margin-bottom:6px">Findings</h2><p class="muted small" style="margin-bottom:12px">“Needs verification” means no approved fact covers it. It does not prove the claim is wrong. Only the company can approve content.</p>
+          <section><div class="row between" style="margin-bottom:6px"><h2>Findings</h2>${!d && !busy && f.some(x => x.fix && x.decision !== 'dismissed') ? `<button type="button" class="btn btn-primary btn-sm" id="fixAllBtn">${UI.icon('sparkles', 14)} Fix All Safe Issues (${f.filter(x => x.fix && x.decision !== 'dismissed').length})</button>` : ''}</div><p class="muted small" style="margin-bottom:12px">“Needs verification” means no approved fact covers it. It does not prove the claim is wrong. Only the company can approve content.</p>
           ${c.total === 0 ? UI.banner('ok', 'No issues found', ' Your content matches ' + sub.companyName + '’s approved rules and facts.') : UI.groupedFindings(f, { actions: !d && !busy })}</section>`;
     }
 
     async function persistDraft(auto) {
-      sub = await API.saveDraft({ id: sub ? sub.id : null, companyId: $('co').value, title: $('title').value, channel: $('ch').value, text: text() });
+      const altVal = $('altText') ? $('altText').value : '';
+      const piiVal = $('piiAuto') ? $('piiAuto').checked : false;
+      sub = await API.saveDraft({ id: sub ? sub.id : null, companyId: $('co').value, title: $('title').value, channel: $('ch').value, text: text(), image: curImage, altText: altVal, piiMasked: piiVal });
       lastSaved = new Date(); $('saved').textContent = (auto ? 'Autosaved ' : 'Saved ') + lastSaved.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
       history.replaceState(null, '', 'studio.html?draft=' + sub.id);
     }
@@ -440,15 +541,88 @@ input[type="password"]::-ms-clear {
       };
     }
 
+        $('delDraftBtn').onclick = async () => {
+      if (busy || !sub || !['draft', 'ai_checked'].includes(sub.status)) return;
+      const ok = await UI.confirmBox({ title: 'Delete this draft?', message: 'This unsubmitted draft will be permanently removed from your workspace.', confirmText: 'Delete draft', danger: true });
+      if (!ok) return;
+      clearTimeout(saveTimer);
+      try {
+        await API.deleteDraft(sub.id);
+        UI.toast('Draft deleted.', 'ok');
+        location.href = 'submissions.html?status=draft';
+      } catch (err) { UI.toast(err.message, 'bad'); }
+    };
     $('save').onclick = () => { clearTimeout(saveTimer); if (!valid()) return; run(() => persistDraft(false), 'Draft saved.'); };
+    $('importDoc').onchange = e => {
+      const f = e.target.files && e.target.files[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        const content = String(r.result || '').trim();
+        if (!$('title').value.trim()) $('title').value = f.name.replace(/\.[^.]+$/, '');
+        $('text').value = content;
+        paint(); schedule();
+        UI.toast('Imported draft from ' + f.name, 'ok');
+      };
+      r.readAsText(f);
+    };
+    $('previewBtn').onclick = () => { showPreview = !showPreview; paint(); if (showPreview && $('previewCard')) $('previewCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); };
+    $('coAssetBtn').onclick = async () => {
+      const box = $('coAssetPicker');
+      if (box.style.display === 'block') { box.style.display = 'none'; return; }
+      const coId = $('co').value;
+      if (!coId) return UI.toast('Choose a company first.', 'bad');
+      try {
+        const g = await API.getCompany(coId);
+        const list = (g.guidelines && g.guidelines.brandAssets) || [];
+        const logo = g.guidelines && g.guidelines.brandLogo;
+        const allAssets = (logo ? [{ id: 'logo', title: g.name + ' Official Logo', type: 'logo', dataUrl: logo }] : []).concat(list);
+        box.style.display = 'block';
+        box.innerHTML = `<section class="card card-pad"><div class="row between" style="margin-bottom:8px"><b>Approved Assets from ${esc(g.name)}</b><button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('coAssetPicker').style.display='none'">Close</button></div>
+          ${allAssets.length ? `<div class="row" style="gap:10px;flex-wrap:wrap">${allAssets.map(a => `<button type="button" class="card" data-pick-asset="${esc(a.dataUrl)}" data-pick-title="${esc(a.title)}" style="padding:8px;cursor:pointer;text-align:left;width:135px"><img src="${a.dataUrl}" style="width:100%;height:70px;object-fit:contain;border-radius:4px;background:#f8fafc"><div class="small" style="margin-top:4px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.title)}</div></button>`).join('')}</div>` : '<p class="muted small">This company has not uploaded any visual assets yet.</p>'}</section>`;
+      } catch (err) { UI.toast(err.message, 'bad'); }
+    };
+    $('maskPiiBtn').onclick = () => {
+      const res = BrandTrust.maskPII(text());
+      if (!res.count) return;
+      $('text').value = res.maskedText;
+      if ($('piiAuto')) $('piiAuto').checked = true;
+      paint(); schedule();
+      UI.toast(`Masked ${res.count} sensitive item(s) locally before analysis.`, 'ok');
+    };
+    $('sampleBannerBtn').onclick = () => {
+      curImage = BrandVision.generateSampleBanner();
+      if ($('altText')) $('altText').value = '';
+      paint(); schedule();
+      UI.toast('Sample promotional banner loaded! Click "Check content" to run Vision + Text scan.', 'ok');
+    };
+    $('imgFile').onchange = e => {
+      const file = e.target.files && e.target.files[0]; if (!file) return;
+      const r = new FileReader();
+      r.onload = async () => { curImage = await BrandVision.compressImage(r.result, 800, 0.82); paint(); schedule(); UI.toast('Image compressed & attached. Click "Check content" to scan.', 'ok'); };
+      r.readAsDataURL(file);
+    };
+    $('clearImgBtn').onclick = () => { curImage = null; if ($('altText')) $('altText').value = ''; paint(); schedule(); };
+    if ($('altText')) $('altText').addEventListener('input', () => schedule());
+
     $('f').onsubmit = ev => {
       ev.preventDefault(); clearTimeout(saveTimer); if (!valid()) return;
+      if ($('piiAuto') && $('piiAuto').checked) {
+        const res = BrandTrust.maskPII(text());
+        if (res.count) { $('text').value = res.maskedText; UI.toast(`PII Shield masked ${res.count} item(s).`, 'ok'); }
+      }
       run(async () => {
+        const altVal = $('altText') ? $('altText').value : '';
+        const piiVal = $('piiAuto') ? $('piiAuto').checked : false;
         if (!sub || sub.status === 'draft') { await persistDraft(false); sub = await API.analyse(sub.id); }
-        else if (dirty()) sub = await API.saveEdit(sub.id, text());
-        else sub = await API.analyse(sub.id);
-        $('text').value = latest().text; return sub;
-      }, s => 'Checked: ' + latest().findings.length + ' finding(s).');
+        else {
+          await API.updateMedia(sub.id, { image: curImage, altText: altVal, piiMasked: piiVal });
+          if (dirty()) sub = await API.saveEdit(sub.id, text());
+          else sub = await API.analyse(sub.id);
+        }
+        $('text').value = latest().text;
+        if ($('altText')) $('altText').value = sub.altText || '';
+        return sub;
+      }, s => 'Checked: ' + (latest().findings.length + (sub.visionFindings || []).length) + ' finding(s).');
     };
     $('submit').onclick = async () => {
       if (busy || !sub || dirty() || latest().findings === null) return;
@@ -461,10 +635,27 @@ input[type="password"]::-ms-clear {
     };
 
     el.addEventListener('click', async e => {
+      if (e.target.closest('#closePreviewBtn')) { showPreview = false; return paint(); }
+      const pa = e.target.closest('[data-pick-asset]');
+      if (pa) {
+        curImage = pa.dataset.pickAsset;
+        if ($('altText') && !$('altText').value) $('altText').value = pa.dataset.pickTitle;
+        $('coAssetPicker').style.display = 'none';
+        paint(); schedule();
+        UI.toast('Attached approved asset: ' + pa.dataset.pickTitle, 'ok');
+        return;
+      }
+      if (e.target.closest('#fixAllBtn')) {
+        return run(async () => {
+          sub = await API.applyAllFixes(sub.id);
+          $('text').value = latest().text;
+          if ($('altText')) $('altText').value = sub.altText || '';
+        }, 'All safe automated fixes applied and content re-checked!');
+      }
       const mk = e.target.closest('mark.hl'); if (mk) return UI.flash('#fc-' + mk.dataset.fid);
       const fc = e.target.closest('.finding'); if (fc && !e.target.closest('button')) return UI.flash(`mark[data-fid="${fc.dataset.fid}"]`);
       const b = e.target.closest('[data-act]'); if (!b || !fc) return; const fid = fc.dataset.fid, a = b.dataset.act;
-      if (a === 'accept') return run(async () => { sub = await API.applyFix(sub.id, fid); $('text').value = latest().text; }, 'Suggestion applied and content re-checked.');
+      if (a === 'accept') return run(async () => { sub = await API.applyFix(sub.id, fid); $('text').value = latest().text; if ($('altText')) $('altText').value = sub.altText || ''; }, 'Suggestion applied and content re-checked.');
       if (a === 'dismiss') return run(async () => { sub = await API.dismissFinding(sub.id, fid); }, 'Finding dismissed. The company can still see it.');
       if (a === 'edit') { const f = latest().findings.find(x => x.id === fid), t = $('text'); t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.focus(); if (f && f.start >= 0 && !dirty()) t.setSelectionRange(f.start, f.end); }
     });

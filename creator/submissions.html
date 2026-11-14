@@ -327,7 +327,7 @@ input[type="password"]::-ms-clear {
 <link rel="stylesheet" href="../css/style.css">
 <link rel="stylesheet" href="../style.css"></head>
 <body><div id="app"></div>
-<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script src="../js/checker.js"></script><script src="../js/cloud.js"></script><script src="../js/trust.js"></script><script src="../js/api.js"></script><script src="../js/i18n.js"></script><script src="../js/app.js"></script>
 <script>
 (async () => {
   await API.ready;
@@ -343,10 +343,24 @@ input[type="password"]::-ms-clear {
       <section class="card">${list.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Company</th><th>Status</th><th>Version</th><th>Updated</th><th></th></tr></thead><tbody>
         ${list.map(s => `<tr><td><div class="t-title">${UI.esc(s.title)}</div><div class="sub">${UI.esc(s.channel)}${s.no ? ' · post #' + s.no : ''}</div></td><td>${UI.esc(s.companyName)}</td><td>${UI.badge(s.status)}</td>
           <td>v${s.versions.length}</td><td class="sub">${UI.fmtDate(s.updatedAt)}</td>
-          <td><a class="btn btn-sm" href="${['draft', 'ai_checked', 'changes_requested'].includes(s.status) ? 'studio.html?draft=' + s.id : 'report.html?id=' + s.id}">${['draft', 'ai_checked'].includes(s.status) ? 'Continue' : s.status === 'changes_requested' ? 'Revise' : 'View report'}</a></td></tr>`).join('')}</tbody></table></div>`
+          <td><div class="row" style="gap:6px;justify-content:flex-end"><a class="btn btn-sm" href="${['draft', 'ai_checked', 'changes_requested'].includes(s.status) ? 'studio.html?draft=' + s.id : 'report.html?id=' + s.id}">${['draft', 'ai_checked'].includes(s.status) ? 'Continue' : s.status === 'changes_requested' ? 'Revise' : 'View report'}</a>${['draft', 'ai_checked'].includes(s.status) ? `<button type="button" class="btn btn-sm" data-del-draft="${s.id}" title="Delete" style="background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;font-weight:600">${UI.icon('trash', 14)} Delete</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>`
         : UI.empty('file-text', subs.length ? 'Nothing in this filter' : 'No submissions yet', subs.length ? 'Try another filter.' : 'Create your first post and check it against a company’s rules.', subs.length ? '' : '<a class="btn btn-primary" href="companies.html">Find a company</a>')}</section>`;
   }
-  el.addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (b) { filter = b.dataset.f; history.replaceState(null, '', filter === 'all' ? 'submissions.html' : 'submissions.html?status=' + filter); render(); } });
+  el.addEventListener('click', async e => {
+    const dbBtn = e.target.closest('[data-del-draft]');
+    if (dbBtn) {
+      const ok = await UI.confirmBox({ title: 'Delete this draft?', message: 'This unsubmitted draft will be permanently removed.', confirmText: 'Delete draft', danger: true });
+      if (!ok) return;
+      try {
+        await API.deleteDraft(dbBtn.dataset.delDraft);
+        subs = subs.filter(x => x.id !== dbBtn.dataset.delDraft);
+        UI.toast('Draft deleted.', 'ok');
+        render();
+      } catch (err) { UI.toast(err.message, 'bad'); }
+      return;
+    }
+    const b = e.target.closest('[data-f]'); if (b) { filter = b.dataset.f; history.replaceState(null, '', filter === 'all' ? 'submissions.html' : 'submissions.html?status=' + filter); render(); }
+  });
   try { subs = await API.listSubmissions(); render(); } catch (e) { el.innerHTML = UI.empty('alert', 'Could not load submissions', e.message, '<button class="btn" onclick="location.reload()">Retry</button>'); }
 })();
 </script></body></html>

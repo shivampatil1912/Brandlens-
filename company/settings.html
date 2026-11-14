@@ -327,7 +327,7 @@ input[type="password"]::-ms-clear {
 <link rel="stylesheet" href="../css/style.css">
 <link rel="stylesheet" href="../style.css"></head>
 <body><div id="app"></div>
-<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script src="../js/checker.js"></script><script src="../js/cloud.js"></script><script src="../js/trust.js"></script><script src="../js/api.js"></script><script src="../js/i18n.js"></script><script src="../js/app.js"></script>
 <script>
 (async () => {
   await API.ready;
@@ -341,10 +341,41 @@ input[type="password"]::-ms-clear {
           <span><b>Manual approval (recommended)</b><br><span class="muted small">Every post comes to your team. You approve, request changes or reject.</span></span></label>
         <label class="check" style="padding:14px;border:1px solid var(--line);border-radius:var(--r-s);margin-bottom:18px"><input type="radio" name="m" value="auto" ${co.autoApprove ? 'checked' : ''}>
           <span><b>Let BrandLens auto-approve clean posts</b><br><span class="muted small">A post is approved automatically only when the check finds nothing, on its first submission. Anything flagged, and every resubmission after you requested changes, still comes to you. Auto-approvals are marked in your history.</span></span></label>
-        <button class="btn btn-primary" type="submit">Save settings</button></form>`;
+        <button class="btn btn-primary" type="submit">Save settings</button></form>
+      <section class="card card-pad" style="max-width:680px;margin-top:20px" id="dbCard">
+        <div class="row between" style="margin-bottom:10px">
+          <div><h2 style="margin-bottom:2px">Database &amp; Cloud Sync</h2><p class="muted small">Hybrid transactional IndexedDB + optional Supabase PostgreSQL cloud sync.</p></div>
+          <span class="badge ${BrandCloud.status().supabaseConnected ? 'b-ok' : 'b-info'}" id="dbBadge">${BrandCloud.status().supabaseConnected ? 'Cloud DB Live' : 'IndexedDB Active'}</span>
+        </div>
+        <div class="field"><label for="sb-url">Database REST Endpoint URL (optional)</label><input class="input" id="sb-url" placeholder="https://your-database-endpoint.com" value="${UI.esc(BrandCloud.getConfig().url)}"></div>
+        <div class="field"><label for="sb-key">Public / API Access Key</label><input class="input" id="sb-key" type="password" placeholder="Paste your public or API access key…" value="${UI.esc(BrandCloud.getConfig().anonKey)}"><span class="hint">Bring Your Own Database: paste your cloud database endpoint &amp; key (or run <code>supabase_schema.sql</code> for PostgreSQL) for live multi-device sync.</span></div>
+        <div class="row" style="gap:10px;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary btn-sm" id="sbSave">Connect &amp; Sync Now</button>
+          <button type="button" class="btn btn-sm" id="sbDisconnect">Use Local IndexedDB Only</button>
+        </div>
+      </section>`;
     document.getElementById('f').onsubmit = async e => {
       e.preventDefault();
       try { await API.setApprovalMode(document.querySelector('input[name=m]:checked').value === 'auto'); UI.toast('Settings saved.', 'ok'); } catch (err) { UI.toast(err.message, 'bad'); }
+    };
+    document.getElementById('sbSave').onclick = async () => {
+      const url = document.getElementById('sb-url').value.trim(), anonKey = document.getElementById('sb-key').value.trim();
+      try {
+        await BrandCloud.testConnection({ url, anonKey });
+        BrandCloud.setConfig({ url, anonKey, enabled: true });
+        const dbRaw = JSON.parse(localStorage.getItem('bl_db_v1') || '{}');
+        await BrandCloud.supabasePush(dbRaw);
+        document.getElementById('dbBadge').className = 'badge b-ok';
+        document.getElementById('dbBadge').textContent = 'Cloud DB Live';
+        UI.toast('Connected to External Cloud Database and synced workspace!', 'ok');
+      } catch (err) { UI.toast(err.message, 'bad'); }
+    };
+    document.getElementById('sbDisconnect').onclick = () => {
+      BrandCloud.setConfig({ url: '', anonKey: '', enabled: false });
+      document.getElementById('sb-url').value = ''; document.getElementById('sb-key').value = '';
+      document.getElementById('dbBadge').className = 'badge b-info';
+      document.getElementById('dbBadge').textContent = 'IndexedDB Active';
+      UI.toast('Switched to local IndexedDB database.', 'ok');
     };
   } catch (e) { el.innerHTML = UI.empty('alert', 'Could not load settings', e.message, '<button class="btn" onclick="location.reload()">Retry</button>'); }
 })();

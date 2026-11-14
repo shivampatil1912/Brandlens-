@@ -327,16 +327,104 @@ input[type="password"]::-ms-clear {
 <link rel="stylesheet" href="../css/style.css">
 <link rel="stylesheet" href="../style.css"></head>
 <body><div id="app"></div>
-<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script src="../js/checker.js"></script><script src="../js/vision.js"></script><script src="../js/cloud.js"></script><script src="../js/trust.js"></script><script src="../js/api.js"></script><script src="../js/i18n.js"></script><script src="../js/app.js"></script>
 <script>
 (async () => {
   await API.ready;
   const ctx = UI.shell({ role: 'company', active: 'history', title: 'Activity History' }); if (!ctx) return;
-  const el = ctx.content; el.innerHTML = UI.loading();
+  const el = ctx.content, esc = UI.esc; el.innerHTML = UI.loading();
+
+  function classifyEvent(text) {
+    const t = String(text || '').toLowerCase();
+    if (t.includes('creator access')) return { key: 'knowledge', label: 'Workspace', badge: 'b-muted', icon: 'book-open' };
+    if (t.includes('approved')) return { key: 'decision', label: 'Approved', badge: 'b-ok', icon: 'check-circle' };
+    if (t.includes('rejected') || t.includes('changes')) return { key: 'decision', label: 'Review', badge: 'b-warn', icon: 'alert' };
+    if (t.includes('false alarm')) return { key: 'false_alarm', label: 'False Alarm', badge: 'b-warn', icon: 'flag' };
+    if (t.includes('submitted') || t.includes('resubmitted')) return { key: 'submission', label: 'Submission', badge: 'b-info', icon: 'send' };
+    return { key: 'knowledge', label: 'Workspace', badge: 'b-muted', icon: 'book-open' };
+  }
+
   try {
-    const list = await API.activity();
-    el.innerHTML = `<div class="page-head"><div><h1>Activity history</h1><p>Submissions, rule changes, reviews and decisions, newest first.</p></div></div>
-      <section class="card card-pad" style="max-width:760px">${list.length ? UI.timeline(list.slice().reverse()) : UI.empty('history', 'No activity yet', 'Changes to your rules and every review decision will be listed here.')}</section>`;
-  } catch (e) { el.innerHTML = UI.empty('alert', 'Could not load history', e.message, '<button class="btn" onclick="location.reload()">Retry</button>'); }
+    const [list, subs] = await Promise.all([API.activity(), API.listSubmissions()]);
+    const merged = list.slice();
+    const seenTexts = new Set(merged.map(x => String(x.text || '').toLowerCase()));
+    subs.forEach(s => {
+      if (s.status === 'approved') {
+        const txt = `Post #${s.no || '–'} “${s.title}” approved.`;
+        if (!merged.some(m => String(m.text).includes(s.title) && String(m.text).toLowerCase().includes('approved'))) {
+          merged.push({ id: 'sub_dec_' + s.id, at: s.updatedAt, text: txt, by: ctx.company.name });
+        }
+      } else if (s.status === 'rejected' || s.status === 'changes_requested') {
+        const verb = s.status === 'rejected' ? 'rejected' : 'sent back for changes';
+        const txt = `Post #${s.no || '–'} “${s.title}” ${verb}.`;
+        if (!merged.some(m => String(m.text).includes(s.title) && String(m.text).toLowerCase().includes(verb))) {
+          merged.push({ id: 'sub_dec_' + s.id, at: s.updatedAt, text: txt, by: ctx.company.name });
+        }
+      }
+      if (s.submittedAt) {
+        const stxt = `Post #${s.no || '–'} “${s.title}” submitted by ${s.creatorName}.`;
+        if (!merged.some(m => String(m.text).includes(s.title) && String(m.text).toLowerCase().includes('submitted'))) {
+          merged.push({ id: 'sub_ev_' + s.id, at: s.submittedAt, text: stxt, by: s.creatorName });
+        }
+      }
+    });
+    const items = merged.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+    let filter = 'all', q = '';
+
+    function render() {
+      const shown = items.filter(e => {
+        const meta = classifyEvent(e.text);
+        if (filter !== 'all' && meta.key !== filter) return false;
+        if (q && !(e.text + ' ' + (e.by || '')).toLowerCase().includes(q)) return false;
+        return true;
+      });
+      const counts = { all: items.length, decision: 0, submission: 0, knowledge: 0, false_alarm: 0 };
+      items.forEach(e => { counts[classifyEvent(e.text).key]++; });
+
+      el.innerHTML = `
+        <div class="page-head">
+          <div><h1>Activity &amp; Audit History</h1><p>Chronological audit log of submissions, brand rule updates, and human review decisions.</p></div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-sm" id="histCsv">${UI.icon('download', 14)} Export CSV</button>
+            <button class="btn btn-primary btn-sm" id="histJson">${UI.icon('download', 14)} Export Audit JSON</button>
+          </div>
+        </div>
+        <div class="row between" style="margin-bottom:16px;gap:12px;flex-wrap:wrap">
+          <div class="tabs" style="margin:0;border-bottom:0">
+            <button class="tab ${filter === 'all' ? 'on' : ''}" data-hf="all">All (${counts.all})</button>
+            <button class="tab ${filter === 'decision' ? 'on' : ''}" data-hf="decision">Decisions (${counts.decision})</button>
+            <button class="tab ${filter === 'submission' ? 'on' : ''}" data-hf="submission">Submissions (${counts.submission})</button>
+            <button class="tab ${filter === 'knowledge' ? 'on' : ''}" data-hf="knowledge">Brand Rules (${counts.knowledge})</button>
+            <button class="tab ${filter === 'false_alarm' ? 'on' : ''}" data-hf="false_alarm">False Alarms (${counts.false_alarm})</button>
+          </div>
+          <div class="search" style="min-width:220px;max-width:280px">${UI.icon('search')}<input class="input" id="hq" type="search" placeholder="Filter audit log…" value="${esc(q)}"></div>
+        </div>
+        <section class="card card-pad">
+          ${shown.length ? `<ul class="item-list">${shown.map(e => {
+            const m = classifyEvent(e.text);
+            return `<li class="item" style="padding:12px 4px;gap:14px;align-items:flex-start">
+              <div class="avatar" style="width:34px;height:34px;font-size:13px;background:#F1F5F9;color:var(--brand);flex-shrink:0">${UI.icon(m.icon, 16)}</div>
+              <div class="grow">
+                <div class="row" style="gap:8px;margin-bottom:3px;flex-wrap:wrap"><span class="badge ${m.badge}">${m.label}</span><b style="font-size:.92rem">${esc(e.text)}</b></div>
+                <div class="muted small">${e.by ? 'By <b>' + esc(e.by) + '</b> · ' : ''}${UI.fmtDate(e.at)}</div>
+              </div>
+            </li>`;
+          }).join('')}</ul>` : UI.empty('history', 'No matching activity', 'Try changing the filter or search query.')}
+        </section>`;
+    }
+
+    render();
+    el.addEventListener('click', e => {
+      const fbtn = e.target.closest('[data-hf]');
+      if (fbtn) { filter = fbtn.dataset.hf; return render(); }
+      if (e.target.closest('#histCsv')) { BrandTrust.exportAuditCSV(subs, ctx.company.name); UI.toast('Audit CSV downloaded.', 'ok'); }
+      if (e.target.closest('#histJson')) { BrandTrust.exportAuditJSON(subs, ctx.company.name, items); UI.toast('Audit JSON downloaded.', 'ok'); }
+    });
+    el.addEventListener('input', e => {
+      if (e.target.id === 'hq') { q = e.target.value.trim().toLowerCase(); render(); const inp = document.getElementById('hq'); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } }
+    });
+  } catch (e) {
+    el.innerHTML = UI.empty('alert', 'Could not load history', e.message, '<button class="btn" onclick="location.reload()">Retry</button>');
+  }
 })();
 </script></body></html>

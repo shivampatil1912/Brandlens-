@@ -327,15 +327,48 @@ input[type="password"]::-ms-clear {
 <link rel="stylesheet" href="../css/style.css">
 <link rel="stylesheet" href="../style.css"></head>
 <body><div id="app"></div>
-<script src="../js/checker.js"></script><script src="../js/api.js"></script><script src="../js/app.js"></script>
+<script src="../js/checker.js"></script><script src="../js/vision.js"></script><script src="../js/trust.js"></script><script src="../js/api.js"></script><script src="../js/i18n.js"></script><script src="../js/app.js"></script>
 <script>
 (async () => {
   await API.ready;
   const ctx = UI.shell({ role: 'creator', active: 'submissions', title: 'AI Review Report' }); if (!ctx) return;
   const el = ctx.content, id = UI.q('id'), esc = UI.esc;
-  let sub, busy = false; el.innerHTML = UI.loading();
+  let sub, busy = false, showPreview = false; el.innerHTML = UI.loading();
   function render() {
-    const v = sub.versions[sub.versions.length - 1], f = v.findings || [], c = BrandCheck.counts(f);
+    const v = sub.versions[sub.versions.length - 1], f = (v.findings || []).concat(sub.visionFindings || []), c = BrandCheck.counts(f);
+
+    function buildChannelPreview(ch, coName, author, text, img, alt, logoUrl) {
+      const creatorName = author || 'Content Creator';
+      const avatar = `<div class="avatar" style="width:36px;height:36px;font-size:13px">${esc(UI.initials(creatorName))}</div>`;
+      const isAd = /ad/i.test(ch), isLi = /linkedin/i.test(ch), isX = /^x /i.test(ch);
+      const footer = isAd
+        ? `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#F8FAFC;border-top:1px solid var(--line)"><span class="small muted">Sponsored · ${esc(coName)}</span><span class="btn btn-primary btn-sm" style="pointer-events:none;font-size:.78rem">Learn More →</span></div>`
+        : isLi
+        ? `<div style="display:flex;justify-content:space-around;padding:8px 14px;border-top:1px solid #f1f5f9;color:#64748b;font-size:.8rem;font-weight:600"><span>👍 Like</span><span>💬 Comment</span><span>🔁 Repost</span><span>➤ Send</span></div>`
+        : isX
+        ? `<div style="display:flex;justify-content:space-between;padding:8px 16px;border-top:1px solid #f1f5f9;color:#64748b;font-size:.8rem"><span>💬 12</span><span>🔁 8</span><span>❤️ 64</span><span>📊 1.2K</span></div>`
+        : `<div style="display:flex;justify-content:space-between;padding:9px 14px;border-top:1px solid #f1f5f9;font-size:.85rem;color:#334155"><span>♡ &nbsp; 💬 &nbsp; ➤</span><span>🔖</span></div>`;
+      return `<div style="max-width:440px;margin:0 auto;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 4px 18px rgba(15,23,42,.06)">
+        <div class="row" style="padding:11px 14px;gap:10px;border-bottom:1px solid #f1f5f9">${avatar}<div class="grow"><div style="display:flex;align-items:center;gap:5px"><b style="font-size:.9rem">${esc(creatorName)}</b><span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#0ea5e9;color:#fff;font-size:10px;font-weight:700">✓</span></div><div class="muted small" style="font-size:.74rem">${esc(ch)} · for <b>${esc(coName)}</b></div></div><span class="muted" style="font-weight:700">···</span></div>
+        ${img ? `<div style="background:#0f172a;display:flex;justify-content:center"><img src="${img}" alt="${esc(alt || '')}" style="width:100%;max-height:280px;object-fit:contain;display:block"></div>` : ''}
+        <div style="padding:12px 14px;font-size:.9rem;white-space:pre-wrap;line-height:1.5;color:#0f172a">${esc(text || 'Your post copy will appear here…')}</div>
+        ${alt ? `<div style="padding:5px 14px 8px;font-size:.74rem;color:#64748b">ALT: ${esc(alt)}</div>` : ''}
+        ${footer}
+      </div>`;
+    }
+    const pvHtml = showPreview ? `<section class="card" style="margin-bottom:16px"><div class="card-head"><h2>Live ${esc(sub.channel)} Preview</h2><button class="btn btn-ghost btn-sm" id="togglePreviewBtn">Close</button></div>
+      <div class="card-body" style="background:#F8FAFC">${buildChannelPreview(sub.channel, sub.companyName, sub.creatorName, v.text, sub.image, sub.altText, '')}</div></section>` : '';
+
+    const certHtml = sub.status === 'approved' ? `<section class="card card-pad" style="border:1.5px solid #14703A;background:linear-gradient(135deg,#F0FDF4,#FFFFFF);margin-bottom:16px">
+      <div class="row between" style="gap:12px;flex-wrap:wrap">
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;color:#14703A;font-weight:700;font-size:.95rem">${UI.icon('shield', 17)} BrandLens Compliance Verified · Ready to Publish</div>
+          <p class="small muted" style="margin-top:4px">Verified ID: <code>BL-${esc(sub.id.toUpperCase())}-V${v.no}</code> · Score: <b>${BrandCheck.score(f).value}/100</b> · Authorized by <b>${esc(sub.companyName)}</b> (${UI.fmtDate(sub.updatedAt)})</p>
+        </div>
+        <button type="button" class="btn btn-sm" onclick="window.print()">${UI.icon('download', 14)} Print Proof</button>
+      </div>
+    </section>` : '';
+    const visHtml = sub.image ? `<section class="card"><div class="card-head"><h2>Visual asset</h2><span class="muted small">${sub.visionMeta ? esc(sub.visionMeta.aspectLabel) : 'Image attached'}</span></div><div class="card-body"><div class="row" style="gap:14px;align-items:flex-start;flex-wrap:wrap"><img src="${sub.image}" alt="${esc(sub.altText || 'Attached visual')}" style="max-width:200px;border-radius:8px;border:1px solid var(--line)"><div class="grow small">${sub.visionMeta ? `<p><b>Contrast:</b> ${sub.visionMeta.contrastRatio}:1 (WCAG min ${sub.visionMeta.minContrast}:1)</p><p style="margin-top:4px"><b>Dominant colors:</b> ${sub.visionMeta.dominantColors.map(dc => `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${dc.hex};border:1px solid #cbd5e1;vertical-align:middle;margin:0 3px"></span><code>${dc.hex}</code>`).join(' ')}</p>` : ''}<p style="margin-top:4px"><b>Alt-text:</b> ${sub.altText ? esc(sub.altText) : '<span class="muted">Not provided</span>'}</p></div></div></div></section>` : '';
     const lastCo = sub.comments.slice().reverse().find(x => x.role === 'company' && x.decision);
     const notice = {
       pending_review: UI.banner('info', 'Waiting for ' + sub.companyName + ' to review', ' You will get a notification when they decide. You cannot edit while it is under review.', 'eye'),
@@ -344,12 +377,14 @@ input[type="password"]::-ms-clear {
     }[sub.status] || '';
     el.innerHTML = `
       <p style="margin-bottom:10px"><a class="btn btn-ghost btn-sm" href="submissions.html">← My submissions</a></p>
-      <div class="page-head"><div><h1>${esc(sub.title)}</h1><p>${esc(sub.channel)} for <b>${esc(sub.companyName)}</b> · version ${v.no}${sub.no ? ' · post #' + sub.no : ''}</p></div>${UI.badge(sub.status)}</div>
+      <div class="page-head"><div><h1>${esc(sub.title)}</h1><p>${esc(sub.channel)} for <b>${esc(sub.companyName)}</b> · version ${v.no}${sub.no ? ' · post #' + sub.no : ''}</p></div><div class="row"><button class="btn btn-sm" id="togglePreviewBtn">${UI.icon("eye", 14)}${showPreview ? "Hide Preview" : "Channel Preview"}</button><button class="btn btn-sm" id="exportAuditBtn">${UI.icon("download", 14)}Export Audit</button>${UI.badge(sub.status)}</div></div>
       ${notice}
+      ${certHtml}
+      ${pvHtml}
       <div class="grid-2">
         <div class="stack">
-          <section class="card"><div class="card-head"><h2>Your content</h2><span class="muted small">Version ${v.no}</span></div><div class="card-body"><div class="draft">${UI.highlight(v.text, f)}</div></div></section>
-          <section class="card card-pad"><div class="row between" style="margin-bottom:10px"><h2>Compliance score</h2><span class="badge b-muted">Rule-based check</span></div>${UI.scoreCard(f)}</section>
+          ${visHtml}<section class="card"><div class="card-head"><h2>Your content</h2><span class="muted small">Version ${v.no}</span></div><div class="card-body"><div class="draft">${UI.highlight(v.text, f)}</div></div></section>
+          <section class="card card-pad"><div class="row between" style="margin-bottom:10px"><h2>Compliance score</h2><span class="badge b-muted">Rule-based check</span></div>${UI.scoreCard(f)}</section>${UI.scoreDeltaCard(sub.versions)}
           <section><h2 style="margin-bottom:12px">Findings</h2>${c.total === 0 ? UI.banner('ok', 'No issues found', '') : UI.groupedFindings(f)}</section>
         </div>
         <div class="stack">
@@ -362,6 +397,8 @@ input[type="password"]::-ms-clear {
   el.addEventListener('click', async e => {
     const mk = e.target.closest('mark.hl'); if (mk) return UI.flash('#fc-' + mk.dataset.fid);
     const fc = e.target.closest('.finding'); if (fc) return UI.flash(`mark[data-fid="${fc.dataset.fid}"]`);
+    if (e.target.closest('#togglePreviewBtn')) { showPreview = !showPreview; return render(); }
+    if (e.target.closest('#exportAuditBtn')) { BrandTrust.exportAuditJSON([sub], sub.companyName, []); UI.toast('Audit report downloaded.', 'ok'); return; }
     if (e.target.closest('#cmBtn') && !busy) {
       busy = true; try { sub = await API.addComment(id, document.getElementById('cm').value); UI.toast('Comment posted.', 'ok'); render(); } catch (err) { UI.toast(err.message, 'bad'); } busy = false;
     }

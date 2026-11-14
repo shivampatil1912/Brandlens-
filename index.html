@@ -409,5 +409,5 @@ input[type="password"]::-ms-clear {
   const s = API.session();
   if (s) { const a = document.getElementById('navLogin'); a.textContent = 'Open workspace'; a.href = (s.user.role === 'company' ? 'company/' : 'creator/') + 'dashboard.html'; }
 </script>
-</body>
+<script src="js/i18n.js"></script><script>if(window.BrandI18n){const nav=document.querySelector(".hdr-nav,.nav,header nav,header .row");if(nav){const d=document.createElement("div");d.innerHTML=BrandI18n.switcherHtml();nav.prepend(d.firstChild);}BrandI18n.apply();}</script></body>
 </html>

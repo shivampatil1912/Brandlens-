@@ -20,7 +20,13 @@
     { p: 'cheapest smartphones in india', hint: 'Comparative claim requires official third-party validation.' },
     { p: 'cheapest' }, { p: 'lowest price' }, { p: 'best in' }, { p: 'number one' }, { p: 'no. 1' }, { p: '#1' },
     { p: "world's best" }, { p: "world's first" }, { p: 'risk-free' }, { p: 'risk free' }, { p: 'unbeatable' },
-    { p: 'fastest' }, { p: 'miracle' }, { p: 'instant results' }
+    { p: 'fastest' }, { p: 'miracle' }, { p: 'instant results' },
+    { p: 'sabse sasta', hint: 'Avoid unverified Hinglish superlative; use "affordable" or cite approved pricing.' },
+    { p: '100% pakka', hint: 'Avoid absolute Hinglish guarantees; reference the 2-year warranty instead.' },
+    { p: 'ekdum free', hint: 'Clarify exact offer terms and add a disclaimer.' },
+    { p: 'dhamaka offer', hint: 'Replace hype wording with clear, factual offer details.' },
+    { p: 'bina shart', hint: 'Specify official terms and conditions.' },
+    { p: 'bharat me no. 1', hint: 'Comparative #1 claim requires third-party market validation.' }
   ];
   const WEIGHT = { critical: 25, high: 15, medium: 8, info: 2 };
   const GROUP = { terminology: 'violation', disclaimer: 'violation', grammar: 'violation', claim: 'unsupported', fact: 'unsupported', tone: 'tone', improvement: 'improvement' };
@@ -197,7 +203,7 @@
     return out;
   }
 
-  const open = f => (f || []).filter(x => x.decision !== 'dismissed');
+  const open = f => (f || []).filter(x => x.decision !== 'dismissed' && x.decision !== 'false_alarm');
   const sevOf = f => (f.severity === 'low' ? 'info' : f.severity);
 
   function counts(findings) {
